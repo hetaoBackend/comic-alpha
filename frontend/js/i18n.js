@@ -58,6 +58,7 @@ const i18n = {
             styleGhibli: '宫崎骏/吉卜力风格',
             stylePixar: '皮克斯动画风格',
             styleShonen: '日本少年漫画风格',
+            styleTomAndJerry: '猫和老鼠风格',
 
             // Comic languages
             langZh: '中文',
@@ -227,6 +228,7 @@ const i18n = {
             styleGhibli: 'Ghibli/Miyazaki Style',
             stylePixar: 'Pixar Animation Style',
             styleShonen: 'Japanese Shonen Manga Style',
+            styleTomAndJerry: 'Tom and Jerry Style',
 
             // Comic languages
             langZh: '中文',
