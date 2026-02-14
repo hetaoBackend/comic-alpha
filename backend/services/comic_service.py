@@ -52,11 +52,13 @@ class ComicService:
             "doraemon": "哆啦A梦风格：圆润可爱的角色设计，简洁明快的线条，温馨幽默的氛围",
             "american": "美式漫画风格：夸张的肌肉线条，英雄主义，强烈的明暗对比",
             "watercolor": "水彩风格：柔和的色彩过渡，艺术感的笔触，梦幻氛围",
-            "disney": "迪士尼动画风格：经典的迪士尼角色设计，流畅的动作表现，丰富的表情，温暖明亮的色彩，充满魔法和梦幻的氛围",
+            "disney": "迪士尼动画艺术风格：流畅圆润的线条，夸张生动的表情，流畅的动作表现，温暖明亮的色彩，充满魔法和梦幻的氛围（注意：只借鉴艺术风格，不使用任何迪士尼角色名称）",
             "ghibli": "宫崎骏/吉卜力风格：细腻的自然场景描绘，柔和温暖的色调，充满想象力的奇幻元素，人物表情细腻生动，富有诗意和治愈感",
             "pixar": "皮克斯动画风格：3D渲染质感，圆润可爱的角色设计，丰富的光影效果，细腻的材质表现，情感表达真挚动人",
             "shonen": "日本少年漫画风格：充满动感的线条和速度线，夸张的表情和动作，热血激昂的氛围，强烈的视觉冲击力，快节奏的分镜",
-            "tom_and_jerry": "猫和老鼠风格：经典的2D手绘动画风格，夸张的肢体动作和表情，充满活力的追逐和闹剧元素，鲜艳明快的色彩"
+            "tom_and_jerry": "猫和老鼠风格：经典的2D手绘动画风格，夸张的肢体动作和表情，充满活力的追逐和闹剧元素，鲜艳明快的色彩",
+            "nezha": "哪吒风格：中国神话动画风格，融合传统国风与现代3D渲染技术，角色设计大胆夸张，浓烈的色彩对比，充满力量感的动作场面，烟熏妆朋克风的哪吒形象",
+            "langlangshan": "浪浪山小妖怪风格：中国奇谭水墨动画风格，清新淡雅的水墨画质感，可爱呆萌的小妖怪形象，温馨治愈的氛围，富有中国传统美学韵味"
         }
         
         # Define language instructions
@@ -79,7 +81,7 @@ Please strictly follow the provided Schema structure to generate the storyboard 
 
 1. **Story Structure**:
    - Generate a complete and coherent {page_count}-page story.
-   - Each page (ComicPage) should contain approximately {rows_per_page} rows (Rows). You can vary slightly (±1 row) for better storytelling flow, but aim for around {rows_per_page} rows per page.
+   - **STRICT ROW COUNT: Each page MUST contain EXACTLY {rows_per_page} rows. This is a hard requirement, not a suggestion. Do not add more or fewer rows.**
    - **Pacing Control**: Each row can contain 1-2 panels (Panels). Mix single-panel rows (for emphasis) with two-panel rows (for dialogue/action) to create dynamic pacing. Avoid strictly alternating patterns - vary the layout naturally based on the story needs.
 
 2. **Visual Design (Critical)**:
@@ -91,13 +93,19 @@ Please strictly follow the provided Schema structure to generate the storyboard 
    - Descriptions should fully reflect the visual style of {self.comic_style}.
 
 3. **Dialogue Content (Very Important)**:
-   - **Rich Dialogue**: Comics should primarily tell stories through dialogue and spoken text. 
+   - **Rich Dialogue**: Comics should primarily tell stories through dialogue and spoken text.
    - **Speech Bubbles**: In the `text` field, use quotes to indicate character dialogue (e.g., "Character A: 'Hello, how are you?'"). This text will appear as speech bubbles in the comic.
    - **Balance**: Prioritize dialogue over internal thoughts. Show emotions through what characters SAY and DO, not just what they think. Internal monologue should be minimal.
    - **Readable Comics**: Ensure readers can follow the story through dialogue alone. Each panel should have verbal content when characters are present.
 
 4. **Language**:
-   - All content (titles, descriptions, dialogue) must follow the language requirement: {language_instruction}"""
+   - All content (titles, descriptions, dialogue) must follow the language requirement: {language_instruction}
+
+5. **Character Naming (CRITICAL)**:
+   - **ONLY use the character names/descriptions provided by the user.** If the user says "rabbit", use "rabbit" or "小兔子" - do NOT replace it with copyrighted character names.
+   - **DO NOT use any copyrighted or trademarked character names** (e.g., Mickey Mouse, Judy Hopps, Elsa, Totoro, etc.).
+   - The style setting only affects the visual appearance and art style, NOT the characters themselves.
+   - Create original character names if needed, but never use existing IP character names."""
 
         try:
             if self.api_key:

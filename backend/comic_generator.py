@@ -63,6 +63,11 @@ def generate_social_media_image_core(
                     img_str = img_str.replace("/backend/", "")
                     img = Image.open(f"{os.getcwd()}/{img_str}")
                     contents.append(img)
+                elif os.path.isabs(img_str) and os.path.isfile(img_str):
+                    # Handle local absolute file paths (e.g., character reference images)
+                    logger.info(f"Loading local reference image: {img_str}")
+                    img = Image.open(img_str)
+                    contents.append(img)
                 elif img_str.startswith('data:image'):
                     logger.info("Processing base64 reference image")
                     # Extract base64 data

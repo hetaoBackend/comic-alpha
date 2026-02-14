@@ -59,6 +59,8 @@ const i18n = {
             stylePixar: '皮克斯动画风格',
             styleShonen: '日本少年漫画风格',
             styleTomAndJerry: '猫和老鼠风格',
+            styleNezha: '哪吒风格',
+            styleLanglangshan: '浪浪山小妖怪风格',
 
             // Comic languages
             langZh: '中文',
@@ -229,6 +231,8 @@ const i18n = {
             stylePixar: 'Pixar Animation Style',
             styleShonen: 'Japanese Shonen Manga Style',
             styleTomAndJerry: 'Tom and Jerry Style',
+            styleNezha: 'Nezha Style',
+            styleLanglangshan: 'Little Monster of Langlang Mountain Style',
 
             // Comic languages
             langZh: '中文',
