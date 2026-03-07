@@ -31,7 +31,7 @@ def generate_social_media_image_core(
         raise ValueError("Google API key is required. Please provide google_api_key parameter or set GOOGLE_API_KEY environment variable.")
     
     client = genai.Client(api_key=api_key, vertexai=False, http_options={'timeout':180000})
-    MODEL_ID = "gemini-3-pro-image-preview"
+    MODEL_ID = "gemini-3.1-flash-image-preview"
     
     logger.info(f"Generating social media image for: {prompt}")
     

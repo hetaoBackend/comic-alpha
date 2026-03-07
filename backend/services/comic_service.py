@@ -79,10 +79,12 @@ class ComicService:
 
 Please strictly follow the provided Schema structure to generate the storyboard script:
 
-1. **Story Structure**:
+1. **Story Structure & Layout**:
    - Generate a complete and coherent {page_count}-page story.
-   - **STRICT ROW COUNT: Each page MUST contain EXACTLY {rows_per_page} rows. This is a hard requirement, not a suggestion. Do not add more or fewer rows.**
-   - **Pacing Control**: Each row can contain 1-2 panels (Panels). Mix single-panel rows (for emphasis) with two-panel rows (for dialogue/action) to create dynamic pacing. Avoid strictly alternating patterns - vary the layout naturally based on the story needs.
+   - **Page Layout**: Each comic page is laid out VERTICALLY with multiple ROWS stacked from top to bottom.
+   - **Row Count**: Each page MUST contain EXACTLY {rows_per_page} rows (vertical sections). Do not add more or fewer rows.
+   - **Panel Layout**: Each row contains 1-2 panels arranged HORIZONTALLY within that row.
+   - **Pacing Control**: Mix single-panel rows (for emphasis/key moments) with two-panel rows (for dialogue/action sequences) to create dynamic pacing.
 
 2. **Visual Design (Critical)**:
    - **Row Height**: Dynamically adjust `height` based on the importance of the panels.

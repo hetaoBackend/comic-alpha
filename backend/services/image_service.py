@@ -216,13 +216,21 @@ class ImageService:
         """
         import json
 
+        # Build layout description and panel content
+        layout_rows = []
         panels = []
         if 'rows' in page_data:
             for i, row in enumerate(page_data['rows'], 1):
                 if 'panels' in row:
+                    panel_count = len(row['panels'])
+                    layout_rows.append(f"Row {i}: {panel_count} panel(s)")
                     for j, panel in enumerate(row['panels'], 1):
                         if 'text' in panel:
-                            panels.append(f"Panel {i}-{j}: {panel['text']}")
+                            panels.append(f"Row {i}, Panel {j}: {panel['text']}")
+
+        # Create layout description
+        total_rows = len(layout_rows)
+        layout_description = f"This page has {total_rows} rows:\n" + "\n".join(layout_rows)
 
         language_map = {
             'zh': 'Chinese (简体中文)',
@@ -253,14 +261,17 @@ IMPORTANT: When any of these characters appear in the comic panels, you MUST use
             )
 
         # Main prompt content
-        prompt_content = """Using the style of {comic_style}, convert the storyline in each panel of the reference image into corresponding comic content. All text in the comic, including titles and speech bubbles, MUST be in {target_lang}.
+        prompt_content = """Using the style of {comic_style}, create a comic page. All text in the comic, including titles and speech bubbles, MUST be in {target_lang}.
+
+# Page Layout (MUST FOLLOW EXACTLY):
+{layout_description}
 
 # Content:
 
 ## Title
 {title}
 
-## Panels
+## Panel Details
 {panels}{character_ref_section}"""
 
         # Build character reference requirement if available
@@ -271,7 +282,8 @@ IMPORTANT: When any of these characters appear in the comic panels, you MUST use
 - Character Reference Images: The first {len(character_info)} provided image(s) are character reference images showing what specific characters look like. When drawing characters named {', '.join(char_names)}, you MUST match their appearance exactly as shown in these reference images."""
 
         # Requirements section (positive guidance only)
-        requirements_content = """- Maintain consistency in characters and scenes.
+        requirements_content = """- **LAYOUT (CRITICAL)**: You MUST strictly follow the page layout specified above. If Row 1 has 1 panel, draw 1 panel in the first row. If Row 2 has 2 panels, draw 2 panels side by side in the second row. Do NOT change the number of rows or panels per row.
+- Maintain consistency in characters and scenes.
 - The image should be colorful and vibrant.
 - Include speech bubbles with short, clear dialogue to help tell the story.
 - Ensure text is legible and spelled correctly.
@@ -292,6 +304,7 @@ IMPORTANT: When any of these characters appear in the comic panels, you MUST use
         formatted_prompt = prompt_content.format(
             comic_style=comic_style,
             title=page_data.get('title', ''),
+            layout_description=layout_description,
             panels="\n".join(panels),
             target_lang=target_lang,
             character_ref_section=character_ref_section
