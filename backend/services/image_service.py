@@ -216,7 +216,8 @@ class ImageService:
         """
         import json
 
-        # Build layout description and panel content
+        # Build layout description and panel visual briefs. The text from the
+        # script is guidance for what to draw, not text to render in the image.
         layout_rows = []
         panels = []
         if 'rows' in page_data:
@@ -226,7 +227,7 @@ class ImageService:
                     layout_rows.append(f"Row {i}: {panel_count} panel(s)")
                     for j, panel in enumerate(row['panels'], 1):
                         if 'text' in panel:
-                            panels.append(f"Row {i}, Panel {j}: {panel['text']}")
+                            panels.append(f"Row {i}, Panel {j} visual brief: {panel['text']}")
 
         # Create layout description
         total_rows = len(layout_rows)
@@ -261,17 +262,17 @@ IMPORTANT: When any of these characters appear in the comic panels, you MUST use
             )
 
         # Main prompt content
-        prompt_content = """Using the style of {comic_style}, create a comic page. All text in the comic, including titles and speech bubbles, MUST be in {target_lang}.
+        prompt_content = """Using the style of {comic_style}, create a comic page made of illustration panels. Use the panel details only as visual briefs for what should be drawn.
 
 # Page Layout (MUST FOLLOW EXACTLY):
 {layout_description}
 
 # Content:
 
-## Title
+## Story Context
 {title}
 
-## Panel Details
+## Panel Visual Briefs
 {panels}{character_ref_section}"""
 
         # Build character reference requirement if available
@@ -283,22 +284,17 @@ IMPORTANT: When any of these characters appear in the comic panels, you MUST use
 
         # Requirements section (positive guidance only)
         requirements_content = """- **LAYOUT (CRITICAL)**: You MUST strictly follow the page layout specified above. If Row 1 has 1 panel, draw 1 panel in the first row. If Row 2 has 2 panels, draw 2 panels side by side in the second row. Do NOT change the number of rows or panels per row.
+- **ILLUSTRATION ONLY (CRITICAL)**: Draw the described scenes directly. Do NOT render the panel descriptions, visual briefs, captions, labels, titles, row names, panel names, or prompt text anywhere in the image.
 - Maintain consistency in characters and scenes.
 - The image should be colorful and vibrant.
-- Include speech bubbles with short, clear dialogue to help tell the story.
-- Ensure text is legible and spelled correctly.
-- All dialogue and titles MUST be in {target_lang}.
-- Display the title only once, typically at the top center of the comic page.
+- Avoid speech bubbles unless the visual brief explicitly requires dialogue inside the scene.
+- When text is explicitly required by the story, keep it minimal and use {target_lang}.
 - Maintain consistent and uniform margins around the entire comic page.
 - Ensure equal spacing on all sides (top, bottom, left, right) for a professional appearance.
-- The comic title should use a {comic_style}-style font that matches the overall comic aesthetic.
-- Use fonts that properly support {target_lang} characters.
-- Ensure all text is correctly encoded and displayed clearly.
-- Text should be clear, sharp, and properly rendered in both speech bubbles and titles.
 - Character Consistency: Use the provided reference images as the definitive source for character appearances. Carry over the exact facial features, hair styles, and identical clothing/outfits.{char_ref_requirement}"""
 
         # Negative prompt (all negative constraints)
-        negative_prompt = "overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, panel indices visible, panel numbers shown, cluttered dialogue, verbose dialogue, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, clothing changes without script requirement, layout deviation from sketch, costume changes"
+        negative_prompt = "rendered panel descriptions, visual brief text, captions above panels, labels above images, prompt text, title text, row labels, panel labels, panel indices visible, panel numbers shown, speech bubbles unless explicitly required, cluttered dialogue, verbose dialogue, overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, clothing changes without script requirement, layout deviation from sketch, costume changes"
         
         # Format the content
         formatted_prompt = prompt_content.format(
