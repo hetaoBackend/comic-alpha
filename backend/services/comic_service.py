@@ -10,7 +10,7 @@ from google.genai import types
 
 
 class Panel(BaseModel):
-    text: str = Field(description="分镜描述文字")
+    text: str = Field(description="分镜描述文字；若包含对白，对白必须短小精炼，适合漫画气泡")
 
 
 class Row(BaseModel):
@@ -95,10 +95,12 @@ Please strictly follow the provided Schema structure to generate the storyboard 
    - Descriptions should fully reflect the visual style of {self.comic_style}.
 
 3. **Dialogue Content (Very Important)**:
-   - **Rich Dialogue**: Comics should primarily tell stories through dialogue and spoken text.
-   - **Speech Bubbles**: In the `text` field, use quotes to indicate character dialogue (e.g., "Character A: 'Hello, how are you?'"). This text will appear as speech bubbles in the comic.
-   - **Balance**: Prioritize dialogue over internal thoughts. Show emotions through what characters SAY and DO, not just what they think. Internal monologue should be minimal.
-   - **Readable Comics**: Ensure readers can follow the story through dialogue alone. Each panel should have verbal content when characters are present.
+   - **Concise Speech Bubbles**: This is a comic, so every line of dialogue must be short and easy to fit inside a speech bubble.
+   - **Length Limit**: Each quoted dialogue line should be no more than 12 Chinese characters, 8 English words, or 16 Japanese kana/kanji characters whenever possible.
+   - **Few Lines**: Use at most 1-2 short dialogue lines per panel. Avoid long explanations, narration, and repeated information.
+   - **Speech Bubbles**: In the `text` field, use quotes to indicate character dialogue (e.g., "Character A: 'Go!'"). This text will appear as speech bubbles in the comic.
+   - **Balance**: Let visuals carry the story. Use dialogue only for punchlines, reactions, decisions, or key emotional beats. Internal monologue should be minimal.
+   - **Readable Comics**: Readers should understand the scene from clear visuals plus brief speech bubbles, not from dense text.
 
 4. **Language**:
    - All content (titles, descriptions, dialogue) must follow the language requirement: {language_instruction}
