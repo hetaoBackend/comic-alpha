@@ -164,6 +164,21 @@
                 </select>
             </div>
             <div id="ai-status"></div>
+            <div class="consistency-row">
+                <label class="consistency-toggle">
+                    <input type="checkbox" data-consistency-option="character_lock" checked>
+                    <span>角色锁定</span>
+                </label>
+                <label class="consistency-toggle">
+                    <input type="checkbox" data-consistency-option="scene_lock" checked>
+                    <span>场景锁定</span>
+                </label>
+                <label class="consistency-toggle">
+                    <input type="checkbox" data-consistency-option="prop_lock" checked>
+                    <span>道具锁定</span>
+                </label>
+            </div>
+            <div id="production-panel" class="production-panel"></div>
         </div>
 
         <!-- Session Management Section -->
@@ -282,6 +297,9 @@
             <div class="prompt-input-row">
                 <textarea id="prompt-input" data-i18n="promptPlaceholder"
                     placeholder="描述你想要的漫画内容，例如：生成一个关于小明学习编程的故事"></textarea>
+                <button onclick="generateStoryIdeas()" class="optimize-btn" id="idea-btn" title="故事灵感">
+                    <span class="btn-text">Idea</span>
+                </button>
                 <button onclick="optimizePrompt()" class="optimize-btn" id="optimize-btn" data-i18n-title="optimizePromptTitle" title="优化提示词">
                     <!-- Magic Wand with Sparkles -->
                     <svg class="wand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

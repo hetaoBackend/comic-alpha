@@ -1,0 +1,18 @@
+{
+  "characters": [
+    {
+      "aliases": ["朱迪", "兔子警官", "兔子主角", "小兔警官", "Judy", "Judy Hopps"],
+      "reference_name": "兔子",
+      "safe_id": "rabbit_hero",
+      "display_name": "兔子主角",
+      "role_hint": "敏捷、认真、善于观察的主角"
+    },
+    {
+      "aliases": ["尼克", "狐狸搭档", "狐狸侦探", "小狐狸", "Nick", "Nick Wilde"],
+      "reference_name": "狐狸",
+      "safe_id": "fox_partner",
+      "display_name": "狐狸搭档",
+      "role_hint": "机灵、幽默、擅长试探线索的搭档"
+    }
+  ]
+}

@@ -134,14 +134,16 @@ class ComicExporter {
                 throw new Error('html2canvas library not loaded');
             }
 
-            // Find all comic panels and temporarily hide their text
-            const panels = element.querySelectorAll('.comic-panel');
-            const originalTexts = [];
-            
-            // Store original text and clear it
-            panels.forEach(panel => {
-                originalTexts.push(panel.innerText);
-                panel.innerText = '';
+            // Find all editable text nodes and temporarily hide them.
+            const textNodes = element.querySelectorAll('.panel-text, .comic-panel');
+            const originalStyles = [];
+
+            textNodes.forEach(node => {
+                originalStyles.push({
+                    visibility: node.style.visibility,
+                    color: node.style.color
+                });
+                node.style.color = 'transparent';
             });
 
             // Generate canvas without text
@@ -152,9 +154,10 @@ class ComicExporter {
                 useCORS: true
             });
 
-            // Restore original text
-            panels.forEach((panel, index) => {
-                panel.innerText = originalTexts[index];
+            // Restore original styles
+            textNodes.forEach((node, index) => {
+                node.style.visibility = originalStyles[index].visibility;
+                node.style.color = originalStyles[index].color;
             });
 
             return canvas.toDataURL('image/png');

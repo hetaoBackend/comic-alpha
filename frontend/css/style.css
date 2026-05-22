@@ -598,6 +598,43 @@ input::placeholder {
     background: var(--panel-bg);
 }
 
+.panel-text {
+    width: 100%;
+    min-height: 48px;
+    outline: none;
+    word-break: break-word;
+}
+
+.panel-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.comic-panel:hover .panel-controls {
+    opacity: 1;
+}
+
+.panel-tool-btn {
+    min-width: 30px;
+    height: 24px;
+    padding: 0 7px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--panel-bg);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.panel-tool-btn:hover {
+    color: var(--text-primary);
+    border-color: rgba(0, 122, 255, 0.35);
+}
+
 /* Error Message */
 .error {
     color: #ff3b30;
@@ -733,6 +770,120 @@ label {
     padding: 8px 12px;
     font-size: 13px;
     border-radius: 8px;
+}
+
+.consistency-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.consistency-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px;
+    border-radius: 7px;
+    background: var(--panel-bg);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-light);
+    font-size: 12px;
+}
+
+.consistency-toggle input {
+    width: auto;
+    margin: 0;
+}
+
+.production-panel {
+    min-height: 30px;
+}
+
+.production-metrics {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.production-chip {
+    border: 1px solid var(--border-light);
+    background: var(--panel-bg);
+    color: var(--text-secondary);
+    border-radius: 7px;
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.production-chip.passive {
+    cursor: default;
+}
+
+.production-chip.has-warning {
+    color: #b45309;
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.story-bible-modal,
+.ideas-modal,
+.review-modal {
+    max-width: 720px;
+    width: min(720px, 92vw);
+}
+
+.story-bible-json {
+    max-height: 58vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--ai-section-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+}
+
+.ideas-list,
+.review-list {
+    display: grid;
+    gap: 10px;
+}
+
+.idea-card {
+    text-align: left;
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.idea-card span,
+.idea-card small,
+.review-item span,
+.review-item small {
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.review-item {
+    display: grid;
+    gap: 5px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-light);
+    background: var(--panel-bg);
+}
+
+.review-empty {
+    color: var(--text-secondary);
+    padding: 12px;
 }
 
 /* Page Navigation */
@@ -2353,4 +2504,3 @@ button.loading .spinner {
     border-radius: 1px;
     opacity: 0.6;
 }
-

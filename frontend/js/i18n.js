@@ -111,6 +111,10 @@ const i18n = {
             statusXiaohongshuSuccess: '✓ 小红书内容生成成功！',
             statusSocialMedia: '正在生成社交媒体内容...',
             statusSocialMediaSuccess: '✓ 社交媒体内容生成成功！',
+            statusGeneratingIdeas: '正在生成故事方向...',
+            statusIdeasSuccess: '✓ 故事方向已生成',
+            statusRewritingPanel: '正在改写当前格...',
+            statusRewriteSuccess: '✓ 当前格已改写',
 
             // Alerts
             alertNoApiKey: '请输入 OpenAI API Key',
@@ -143,6 +147,8 @@ const i18n = {
             modalTitleLabel: '标题：',
             modalContentLabel: '正文：',
             modalTagsLabel: '标签：',
+            storyBibleTitle: '故事圣经',
+            ideasTitle: '选择一个故事方向',
 
             // Modal buttons
             btnDownloadThis: '下载此页',
@@ -283,6 +289,10 @@ const i18n = {
             statusXiaohongshuSuccess: '✓ Xiaohongshu content generated successfully!',
             statusSocialMedia: 'Generating Twitter post...',
             statusSocialMediaSuccess: '✓ Twitter post generated successfully!',
+            statusGeneratingIdeas: 'Generating story directions...',
+            statusIdeasSuccess: '✓ Story directions ready',
+            statusRewritingPanel: 'Rewriting panel...',
+            statusRewriteSuccess: '✓ Panel rewritten',
 
             // Alerts
             alertNoApiKey: 'Please enter OpenAI API Key',
@@ -315,6 +325,8 @@ const i18n = {
             modalTitleLabel: 'Title:',
             modalContentLabel: 'Content:',
             modalTagsLabel: 'Tags:',
+            storyBibleTitle: 'Story Bible',
+            ideasTitle: 'Choose a Story Direction',
 
             // Modal buttons
             btnDownloadThis: 'Download This',

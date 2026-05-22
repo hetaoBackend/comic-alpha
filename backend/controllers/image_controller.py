@@ -39,6 +39,9 @@ def generate_comic_image():
         extra_body = data.get('extra_body')
         rows_per_page = data.get('rows_per_page')
         language = data.get('language', 'en')
+        story_bible = data.get('story_bible')
+        continuity_context = data.get('continuity_context')
+        consistency_options = data.get('consistency_options')
 
         print(f"extra_body: {extra_body}")
         print(f"rows_per_page: {rows_per_page}")
@@ -52,7 +55,10 @@ def generate_comic_image():
             extra_body=extra_body,
             google_api_key=google_api_key,
             rows_per_page=rows_per_page,
-            language=language
+            language=language,
+            story_bible=story_bible,
+            continuity_context=continuity_context,
+            consistency_options=consistency_options
         )
         
         if not image_url:

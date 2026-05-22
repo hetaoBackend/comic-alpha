@@ -24,9 +24,37 @@ refer_image/
 2. **Name the file with the character's name** (e.g., `Nobita.png`, `Tom.jpg`)
 3. Supported image formats: `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`
 4. When generating comics with that style, the system will automatically:
-   - Load all reference images from the style folder
+   - Load matching reference images from the style folder
    - Extract character names from filenames
-   - Pass the images to the AI model with instructions to match the character appearances
+   - Resolve configured aliases into stable internal character IDs
+   - Pass only the relevant images to the AI model with instructions to match the character appearances
+
+## Optional Character Alias Metadata
+
+Each style folder may include a `characters.json` file. This lets users type familiar creative shorthand while the generation pipeline uses safe internal names and the correct local reference image.
+
+Example:
+
+```json
+{
+  "characters": [
+    {
+      "aliases": ["兔子警官", "小兔"],
+      "reference_name": "兔子",
+      "safe_id": "rabbit_hero",
+      "display_name": "兔子主角",
+      "role_hint": "敏捷、认真、善于观察的主角"
+    }
+  ]
+}
+```
+
+Rules:
+
+- `reference_name` must match an image filename without extension, such as `兔子.jpg`.
+- `safe_id` is used in panel scripts and continuity tracking.
+- `display_name` is used in generated script text instead of alias strings.
+- `aliases` are input-only shortcuts and should not be used in image prompts.
 
 ## Example
 
@@ -45,5 +73,5 @@ When generating a Doraemon-style comic, the AI will use these images as referenc
 
 - Use high-quality, clear images for best results
 - Images should show the character clearly (preferably front-facing or 3/4 view)
-- The filename (without extension) becomes the character name in the prompt
+- The filename (without extension) becomes the reference image name
 - Multiple characters can be added to each style folder
