@@ -586,6 +586,10 @@ input::placeholder {
     outline: none;
 }
 
+.comic-panel.has-panel-meta {
+    padding-top: 40px;
+}
+
 .comic-panel:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
@@ -603,6 +607,38 @@ input::placeholder {
     min-height: 48px;
     outline: none;
     word-break: break-word;
+}
+
+.panel-meta {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    right: 48px;
+    display: flex;
+    gap: 4px;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.panel-meta-chip {
+    flex: 0 1 auto;
+    max-width: 45%;
+    min-width: 0;
+    padding: 2px 6px;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+[data-theme="dark"] .panel-meta-chip {
+    background: rgba(28, 28, 30, 0.72);
 }
 
 .panel-controls {

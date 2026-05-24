@@ -408,6 +408,24 @@ class ImageService:
             return "; ".join(lines)
 
         def _panel_to_visual_brief(panel):
+            # `panel.text` is the user-editable script surface in the frontend.
+            # Prefer it so manual edits override stale structured fields.
+            edited_text = panel.get('text')
+            if isinstance(edited_text, str) and edited_text.strip():
+                pieces = []
+                if panel.get('shot'):
+                    pieces.append(f"shot={panel['shot']}")
+                if panel.get('location_id'):
+                    pieces.append(f"location_id={panel['location_id']}")
+                if panel.get('characters'):
+                    pieces.append("characters=" + ", ".join(panel.get('characters') or []))
+                if panel.get('emotion'):
+                    pieces.append(f"emotion={panel['emotion']}")
+                pieces.append(edited_text.strip())
+                if panel.get('negative_notes'):
+                    pieces.append(f"negative_notes={panel['negative_notes']}")
+                return "; ".join(pieces)
+
             structured_keys = ['shot', 'location_id', 'characters', 'action', 'emotion', 'visual_notes', 'negative_notes']
             if any(panel.get(key) for key in structured_keys) or panel.get('dialogue'):
                 pieces = []

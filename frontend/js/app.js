@@ -677,6 +677,16 @@ class UIController {
     }
 
     /**
+     * Ensure the latest inline script edits are in pageManager before actions
+     * that read page data for API calls or navigation.
+     */
+    syncCurrentScriptEdits() {
+        if (this.renderer && this.renderer.syncEdits) {
+            this.renderer.syncEdits();
+        }
+    }
+
+    /**
      * Get continuity summaries before the target page.
      * @param {number} pageIndex Zero-based page index
      * @returns {Array} Continuity summaries
@@ -854,6 +864,7 @@ class UIController {
      * Review all current script pages.
      */
     async reviewCurrentScript() {
+        this.syncCurrentScriptEdits();
         const pages = this.pageManager.getAllPages();
         if (!pages || pages.length === 0) {
             alert(window.i18n.t('alertNoComicData'));
@@ -919,6 +930,7 @@ class UIController {
      * Rewrite one structured panel using nearby panel context.
      */
     async rewritePanel(panel, context, instruction) {
+        this.syncCurrentScriptEdits();
         const apiKey = this.apiKeyInput.value.trim();
         const googleApiKey = this.googleApiKeyInput.value.trim();
         if (!apiKey && !googleApiKey) {
@@ -1033,6 +1045,7 @@ class UIController {
      * Go to previous page
      */
     prevPage() {
+        this.syncCurrentScriptEdits();
         if (this.pageManager.prevPage()) {
             this.loadCurrentPage();
             this.saveCurrentSessionState();
@@ -1043,6 +1056,7 @@ class UIController {
      * Go to next page
      */
     nextPage() {
+        this.syncCurrentScriptEdits();
         if (this.pageManager.nextPage()) {
             this.loadCurrentPage();
             this.saveCurrentSessionState();
@@ -1104,6 +1118,7 @@ class UIController {
      * Generate final comic image from current page
      */
     async generateFinalImage() {
+        this.syncCurrentScriptEdits();
         const pageData = this.pageManager.getCurrentPage();
 
         if (!pageData) {
@@ -1340,6 +1355,7 @@ class UIController {
      * Uses previous generated pages as reference for consistency
      */
     async generateAllPagesImages() {
+        this.syncCurrentScriptEdits();
         const totalPages = this.pageManager.getPageCount();
 
         if (totalPages === 0) {
