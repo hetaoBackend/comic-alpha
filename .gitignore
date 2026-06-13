@@ -28,6 +28,7 @@ Thumbs.db
 # Logs
 *.log
 backend/static/images/*.png
+assets/refer_image/disney/大福.png
 
 # Assets
 # Commit showcase examples, but ignore temporary/test files

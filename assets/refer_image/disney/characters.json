@@ -13,6 +13,13 @@
       "safe_id": "fox_partner",
       "display_name": "狐狸搭档",
       "role_hint": "机灵、幽默、擅长试探线索的搭档"
+    },
+    {
+      "aliases": ["大福", "小女孩", "两岁女孩", "2岁女孩"],
+      "reference_name": "大福",
+      "safe_id": "two_year_old_girl",
+      "display_name": "两岁小女孩",
+      "role_hint": "活泼、天真、可爱的小女孩"
     }
   ]
 }

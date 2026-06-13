@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>comic-perfect</title>
     <link rel="icon" type="image/jpeg" href="assets/favicon.jpeg">
-    <link rel="stylesheet" href="frontend/css/style.css?v=11">
+    <link rel="stylesheet" href="frontend/css/style.css?v=10">
 </head>
 
 <body>
@@ -134,6 +134,7 @@
             <div class="flex-row">
                 <label style="white-space: nowrap;" data-i18n="rowsPerPageLabel">每页行数:</label>
                 <select id="rows-per-page" style="flex: 1;">
+                    <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
                     <option value="4" selected>4</option>
@@ -164,21 +165,6 @@
                 </select>
             </div>
             <div id="ai-status"></div>
-            <div class="consistency-row">
-                <label class="consistency-toggle">
-                    <input type="checkbox" data-consistency-option="character_lock" checked>
-                    <span>角色锁定</span>
-                </label>
-                <label class="consistency-toggle">
-                    <input type="checkbox" data-consistency-option="scene_lock" checked>
-                    <span>场景锁定</span>
-                </label>
-                <label class="consistency-toggle">
-                    <input type="checkbox" data-consistency-option="prop_lock" checked>
-                    <span>道具锁定</span>
-                </label>
-            </div>
-            <div id="production-panel" class="production-panel"></div>
         </div>
 
         <!-- Session Management Section -->
@@ -297,9 +283,6 @@
             <div class="prompt-input-row">
                 <textarea id="prompt-input" data-i18n="promptPlaceholder"
                     placeholder="描述你想要的漫画内容，例如：生成一个关于小明学习编程的故事"></textarea>
-                <button onclick="generateStoryIdeas()" class="optimize-btn" id="idea-btn" title="故事灵感">
-                    <span class="btn-text">Idea</span>
-                </button>
                 <button onclick="optimizePrompt()" class="optimize-btn" id="optimize-btn" data-i18n-title="optimizePromptTitle" title="优化提示词">
                     <!-- Magic Wand with Sparkles -->
                     <svg class="wand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -406,11 +389,11 @@
     <script src="frontend/js/theme.js?v=4"></script>
     <script src="frontend/js/config.js?v=4"></script>
     <script src="frontend/js/api.js?v=5"></script>
-    <script src="frontend/js/renderer.js?v=5"></script>
+    <script src="frontend/js/renderer.js?v=4"></script>
     <script src="frontend/js/pageManager.js?v=4"></script>
     <script src="frontend/js/exporter.js?v=4"></script>
     <script src="frontend/js/sessionManager.js?v=2"></script>
-    <script src="frontend/js/app.js?v=15"></script>
+    <script src="frontend/js/app.js?v=14"></script>
 </body>
 
 </html>

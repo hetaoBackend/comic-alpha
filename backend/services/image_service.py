@@ -4,6 +4,7 @@ import glob
 import logging
 import requests
 import json
+import copy
 from typing import List, Dict, Any, Optional, Union, Tuple
 from comic_generator import generate_social_media_image_core
 
@@ -16,30 +17,23 @@ class ImageService:
     # 参考图目录路径（相对于项目根目录）
     REFER_IMAGE_BASE_PATH = "assets/refer_image"
     REFERENCE_CHARACTER_META = "characters.json"
-    PROTECTED_REFERENCE_STYLES = {
-        "doraemon",
-        "disney",
-        "ghibli",
-        "pixar",
-        "tom_and_jerry",
-        "nezha",
-        "langlangshan",
+    SAFE_TEXT_REPLACEMENTS = {
+        "disney": {
+            "迪士尼动画风格": "明亮家庭动画风格",
+            "迪士尼漫画": "明亮家庭动画漫画",
+            "迪士尼": "家庭动画",
+            "Disney Animation Style": "bright family animation style",
+            "Disney animation style": "bright family animation style",
+            "Disney comic": "family animation comic",
+            "Disney": "family animation",
+        }
     }
 
     @staticmethod
     def get_safe_style_description(comic_style: str) -> str:
-        """Return image-model-safe style wording without brand/IP names."""
+        """Return image-model-safe wording for IP-adjacent styles."""
         style_descriptions = {
-            "doraemon": "a rounded, cute, clean-line children's comic style with warm humor and bright simple colors",
-            "american": "a bold American comic-book illustration style with dynamic poses, crisp ink lines, and strong contrast",
-            "watercolor": "a soft watercolor comic style with gentle color bleeding, light paper texture, and dreamy atmosphere",
-            "disney": "a bright family animation-inspired style with rounded shapes, expressive faces, smooth motion, and warm colors",
-            "ghibli": "a poetic hand-painted animation-inspired style with gentle natural backgrounds, warm colors, and expressive subtle emotions",
-            "pixar": "a polished 3D animated family-film style with rounded character design, soft cinematic lighting, and expressive acting",
-            "shonen": "a high-energy Japanese youth manga style with speed lines, dramatic angles, bold expressions, and punchy pacing",
-            "tom_and_jerry": "a classic hand-drawn slapstick cartoon style with exaggerated physical comedy, elastic poses, and lively colors",
-            "nezha": "a modern Chinese mythic animation-inspired style with bold shapes, energetic action, and rich traditional color accents",
-            "langlangshan": "a Chinese ink-wash animation-inspired style with soft brush texture, cute folk-tale characters, and gentle humor",
+            "disney": "a bright family animation-inspired style with rounded shapes, expressive faces, smooth motion, and warm colors"
         }
         return style_descriptions.get(comic_style, comic_style)
 
@@ -71,12 +65,7 @@ class ImageService:
 
     @staticmethod
     def resolve_reference_characters(comic_style: str, text: str) -> List[Dict[str, Any]]:
-        """
-        Map user-facing aliases to safe internal character IDs and reference images.
-
-        The returned aliases are meant for script-stage disambiguation only. Image
-        prompts should use safe_id/display_name/reference_name, not the aliases.
-        """
+        """Map user-facing aliases to safe names and local reference images."""
         if not text:
             return []
 
@@ -104,54 +93,71 @@ class ImageService:
         return matched
 
     @staticmethod
-    def _collect_page_character_ids(page_data: Dict[str, Any]) -> set[str]:
-        character_ids = set()
-        for row in page_data.get('rows', []) or []:
-            for panel in row.get('panels', []) or []:
-                for character_id in panel.get('characters', []) or []:
-                    character_ids.add(character_id)
-        return character_ids
+    def _reference_label(comic_style: str, reference_name: str) -> str:
+        for character in ImageService._load_reference_character_meta(comic_style):
+            if character.get("reference_name") == reference_name:
+                display_name = character.get("display_name")
+                safe_id = character.get("safe_id")
+                labels = [reference_name]
+                for label in [display_name, safe_id]:
+                    if label and label not in labels:
+                        labels.append(label)
+                return " / ".join(labels)
+        return reference_name
+
+    @staticmethod
+    def _sanitize_reference_aliases(value: Any, comic_style: str) -> Any:
+        """Replace input-only protected aliases before sending prompts to image models."""
+        if isinstance(value, str):
+            sanitized = value
+            for source, replacement in ImageService.SAFE_TEXT_REPLACEMENTS.get(comic_style, {}).items():
+                sanitized = sanitized.replace(source, replacement)
+            for character in ImageService._load_reference_character_meta(comic_style):
+                replacement = character.get("display_name") or character.get("reference_name")
+                if not replacement:
+                    continue
+                aliases = [alias for alias in character.get("aliases", []) if isinstance(alias, str) and alias]
+                for alias in sorted(aliases, key=len, reverse=True):
+                    sanitized = sanitized.replace(alias, replacement)
+                    sanitized = sanitized.replace(alias.lower(), replacement)
+                    sanitized = sanitized.replace(alias.upper(), replacement)
+            return sanitized
+        if isinstance(value, list):
+            return [ImageService._sanitize_reference_aliases(item, comic_style) for item in value]
+        if isinstance(value, dict):
+            return {
+                key: ImageService._sanitize_reference_aliases(item, comic_style)
+                for key, item in value.items()
+            }
+        return value
 
     @staticmethod
     def _select_relevant_reference_images(
         page_data: Dict[str, Any],
         style_references: List[Tuple[str, str]],
-        story_bible: Optional[Dict[str, Any]] = None
+        comic_style: str
     ) -> List[Tuple[str, str]]:
-        """Only pass reference images for characters used on this page."""
+        """Prefer only the local character references named in this page."""
         if not style_references:
             return []
 
-        refs_by_name = {name: (name, path) for name, path in style_references}
-        selected_names = set()
-        page_character_ids = ImageService._collect_page_character_ids(page_data)
-        story_bible = story_bible or {}
+        panel_text = json.dumps(page_data, ensure_ascii=False)
+        panel_text_lower = panel_text.lower()
+        selected_names = {name for name, _ in style_references if name in panel_text}
+        for character in ImageService._load_reference_character_meta(comic_style):
+            reference_name = character.get("reference_name")
+            display_name = character.get("display_name")
+            aliases = [alias for alias in character.get("aliases", []) if isinstance(alias, str)]
+            matched_alias = any(alias in panel_text or alias.lower() in panel_text_lower for alias in aliases)
+            matched_display = display_name and display_name in panel_text
+            if reference_name and (matched_alias or matched_display):
+                selected_names.add(reference_name)
 
-        for character in story_bible.get('characters', []) or []:
-            if not isinstance(character, dict):
-                continue
-            if page_character_ids and character.get('id') not in page_character_ids:
-                continue
-            reference_image = character.get('reference_image') or character.get('name')
-            if reference_image:
-                selected_names.add(os.path.splitext(os.path.basename(reference_image))[0])
-            if character.get('name'):
-                selected_names.add(character['name'])
-
-        if not selected_names:
-            panel_text = json.dumps(page_data, ensure_ascii=False)
-            for name, _ in style_references:
-                if name in panel_text:
-                    selected_names.add(name)
-
-        selected = []
-        for name in selected_names:
-            if name in refs_by_name:
-                selected.append(refs_by_name[name])
-        return selected
+        selected = [(name, path) for name, path in style_references if name in selected_names]
+        return selected or style_references
 
     @staticmethod
-    def get_style_reference_images(comic_style: str, allow_protected: bool = False) -> List[Tuple[str, str]]:
+    def get_style_reference_images(comic_style: str) -> List[Tuple[str, str]]:
         """
         Get reference images for a specific comic style.
 
@@ -162,10 +168,6 @@ class ImageService:
             List of tuples (character_name, image_path) where character_name
             is derived from the filename (without extension)
         """
-        if comic_style in ImageService.PROTECTED_REFERENCE_STYLES and not allow_protected:
-            logger.info("Skipping bundled reference images for protected/IP-adjacent style '%s'", comic_style)
-            return []
-
         refer_dir = ImageService._reference_dir(comic_style)
 
         if not os.path.exists(refer_dir):
@@ -195,10 +197,7 @@ class ImageService:
         extra_body: Optional[List] = None,
         google_api_key: str = None,
         rows_per_page: Optional[int] = None,
-        language: str = 'en',
-        story_bible: Optional[Dict[str, Any]] = None,
-        continuity_context: Optional[List[Dict[str, Any]]] = None,
-        consistency_options: Optional[Dict[str, bool]] = None
+        language: str = 'en'
     ) -> tuple[Optional[str], str]:
         """
         Generate comic image from page data
@@ -209,90 +208,122 @@ class ImageService:
             reference_img: Optional reference image(s)
             extra_body: Optional extra body parameters (previous pages)
             google_api_key: Google API key for image generation
-            rows_per_page: Optional number of rows to strictly limit (3-5)
+            rows_per_page: Optional number of rows to strictly limit (1-5)
             language: Language of the comic content
-            story_bible: Character, location, prop, and visual consistency rules
-            continuity_context: Previous page continuity summaries
-            consistency_options: Locks such as character_lock and scene_lock
 
         Returns:
             Tuple of (image_url, prompt)
         """
         # Truncate page data to rows_per_page if specified
+        page_data = copy.deepcopy(page_data)
         if rows_per_page is not None and 'rows' in page_data:
-            page_data = page_data.copy()  # Don't modify original
             page_data['rows'] = page_data['rows'][:rows_per_page]
 
-        # Get style-specific character reference images and keep only the
-        # characters used on this page. Passing an entire IP-adjacent reference
-        # folder can trigger model safety filters and also confuses identity.
-        style_references = ImageService.get_style_reference_images(comic_style, allow_protected=True)
-        style_references = ImageService._select_relevant_reference_images(page_data, style_references, story_bible)
+        if comic_style == "disney":
+            page_data = ImageService._sanitize_reference_aliases(page_data, comic_style)
+
+        # Get style-specific character reference images
+        style_references = ImageService.get_style_reference_images(comic_style)
+        if comic_style == "disney":
+            style_references = ImageService._select_relevant_reference_images(page_data, style_references, comic_style)
         character_info = []
         style_ref_paths = []
 
         for char_name, img_path in style_references:
-            character_info.append((char_name, img_path))
+            character_info.append((ImageService._reference_label(comic_style, char_name), img_path))
             style_ref_paths.append(img_path)
 
         safe_style = ImageService.get_safe_style_description(comic_style)
 
         # Convert page data to prompt with style, language, and character references
         prompt = ImageService._convert_page_to_prompt(
-            page_data,
-            safe_style,
-            language,
-            character_info,
-            story_bible=story_bible,
-            continuity_context=continuity_context,
-            consistency_options=consistency_options
+            page_data, safe_style, language, character_info
         )
 
         # Prepare reference images (can be single image or array)
         reference_images = []
+        layout_references = []
+        extra_references = []
 
         # Add style-specific character reference images first
         reference_images.extend(style_ref_paths)
 
-        # Add the current layout/sketch reference. This was passed by the
-        # frontend already; keeping it here makes layout fidelity much stronger.
+        # Add the current layout/sketch reference. This is usually passed by
+        # the frontend and helps preserve the intended panel composition.
         if reference_img:
             if isinstance(reference_img, list):
-                reference_images.extend(reference_img)
+                layout_references.extend(reference_img)
             else:
-                reference_images.append(reference_img)
+                layout_references.append(reference_img)
+        reference_images.extend(layout_references)
 
         # Add previous generated pages as additional references
         if extra_body and isinstance(extra_body, list):
             # extra_body contains previous page URLs
             for prev_page in extra_body:
                 if isinstance(prev_page, dict) and 'imageUrl' in prev_page:
-                    reference_images.append(prev_page['imageUrl'])
+                    extra_references.append(prev_page['imageUrl'])
                 elif isinstance(prev_page, str):
-                    reference_images.append(prev_page)
+                    extra_references.append(prev_page)
+        reference_images.extend(extra_references)
 
         # Use reference_images if we have any, otherwise None
         final_reference = reference_images if reference_images else None
         
-        try:
-            image_url = generate_social_media_image_core(
-                prompt=prompt,
-                reference_img=final_reference,
-                google_api_key=google_api_key
-            )
-        except Exception as e:
-            if style_ref_paths and "PROHIBITED_CONTENT" in str(e):
-                logger.warning("Retrying without bundled style reference images after prohibited-content response")
-                fallback_references = [ref for ref in reference_images if ref not in style_ref_paths]
-                image_url = generate_social_media_image_core(
-                    prompt=prompt,
-                    reference_img=fallback_references if fallback_references else None,
-                    google_api_key=google_api_key
-                )
-            else:
-                raise
+        image_url = ImageService._generate_with_disney_fallbacks(
+            prompt=prompt,
+            google_api_key=google_api_key,
+            comic_style=comic_style,
+            has_character_refs=bool(style_ref_paths),
+            reference_sets=[
+                final_reference,
+                (style_ref_paths + layout_references) if extra_references else None,
+                style_ref_paths if style_ref_paths else None,
+                layout_references if layout_references and not style_ref_paths else None,
+                None if not style_ref_paths else None,
+            ]
+        )
         
         return image_url, prompt
+
+    @staticmethod
+    def _generate_with_disney_fallbacks(
+        prompt: str,
+        google_api_key: str,
+        comic_style: str,
+        has_character_refs: bool,
+        reference_sets: List[Optional[List[Any]]]
+    ) -> Optional[str]:
+        tried = set()
+        last_error = None
+
+        for refs in reference_sets:
+            refs = refs or None
+            if has_character_refs and refs is None:
+                continue
+            key = tuple(json.dumps(ref, sort_keys=True, default=str) for ref in (refs or []))
+            if key in tried:
+                continue
+            tried.add(key)
+
+            try:
+                return generate_social_media_image_core(
+                    prompt=prompt,
+                    reference_img=refs,
+                    google_api_key=google_api_key
+                )
+            except Exception as e:
+                last_error = e
+                if comic_style == "disney" and "PROHIBITED_CONTENT" in str(e):
+                    if has_character_refs and not refs:
+                        break
+                    logger.warning("Retrying Disney image generation with fewer references after prohibited-content response")
+                    continue
+                raise
+
+        if last_error:
+            raise last_error
+        return None
     
     @staticmethod
     def generate_comic_cover(
@@ -321,7 +352,7 @@ class ImageService:
         style_ref_paths = []
 
         for char_name, img_path in style_references:
-            character_info.append((char_name, img_path))
+            character_info.append((ImageService._reference_label(comic_style, char_name), img_path))
             style_ref_paths.append(img_path)
 
         safe_style = ImageService.get_safe_style_description(comic_style)
@@ -377,10 +408,7 @@ class ImageService:
         page_data: Dict[str, Any],
         comic_style: str = 'doraemon',
         language: str = 'en',
-        character_info: Optional[List[Tuple[str, str]]] = None,
-        story_bible: Optional[Dict[str, Any]] = None,
-        continuity_context: Optional[List[Dict[str, Any]]] = None,
-        consistency_options: Optional[Dict[str, bool]] = None
+        character_info: Optional[List[Tuple[str, str]]] = None
     ) -> str:
         """Convert page data to image generation prompt
 
@@ -389,81 +417,28 @@ class ImageService:
             comic_style: Style of the comic
             language: Language code
             character_info: List of (character_name, image_path) tuples for reference
-            story_bible: Character, location, prop, and visual consistency rules
-            continuity_context: Previous page continuity summaries
-            consistency_options: Locks such as character_lock and scene_lock
         """
         import json
-        story_bible = story_bible or {}
-        continuity_context = continuity_context or []
-        consistency_options = consistency_options or {}
-
-        def _dialogue_to_text(dialogue):
-            lines = []
-            for line in dialogue or []:
-                if isinstance(line, dict) and line.get('text'):
-                    speaker = line.get('speaker') or ''
-                    text = line['text']
-                    lines.append(f"speech bubble for {speaker} with exact text: \"{text}\"" if speaker else f"speech bubble with exact text: \"{text}\"")
-            return "; ".join(lines)
-
-        def _panel_to_visual_brief(panel):
-            # `panel.text` is the user-editable script surface in the frontend.
-            # Prefer it so manual edits override stale structured fields.
-            edited_text = panel.get('text')
-            if isinstance(edited_text, str) and edited_text.strip():
-                pieces = []
-                if panel.get('shot'):
-                    pieces.append(f"shot={panel['shot']}")
-                if panel.get('location_id'):
-                    pieces.append(f"location_id={panel['location_id']}")
-                if panel.get('characters'):
-                    pieces.append("characters=" + ", ".join(panel.get('characters') or []))
-                if panel.get('emotion'):
-                    pieces.append(f"emotion={panel['emotion']}")
-                pieces.append(edited_text.strip())
-                if panel.get('negative_notes'):
-                    pieces.append(f"negative_notes={panel['negative_notes']}")
-                return "; ".join(pieces)
-
-            structured_keys = ['shot', 'location_id', 'characters', 'action', 'emotion', 'visual_notes', 'negative_notes']
-            if any(panel.get(key) for key in structured_keys) or panel.get('dialogue'):
-                pieces = []
-                if panel.get('shot'):
-                    pieces.append(f"shot={panel['shot']}")
-                if panel.get('location_id'):
-                    pieces.append(f"location_id={panel['location_id']}")
-                if panel.get('characters'):
-                    pieces.append("characters=" + ", ".join(panel.get('characters') or []))
-                if panel.get('action'):
-                    pieces.append(f"action={panel['action']}")
-                if panel.get('emotion'):
-                    pieces.append(f"emotion={panel['emotion']}")
-                if panel.get('visual_notes'):
-                    pieces.append(f"visual_notes={panel['visual_notes']}")
-                dialogue_text = _dialogue_to_text(panel.get('dialogue'))
-                if dialogue_text:
-                    pieces.append(f"dialogue={dialogue_text}")
-                if panel.get('negative_notes'):
-                    pieces.append(f"negative_notes={panel['negative_notes']}")
-                return "; ".join(pieces)
-            return panel.get('text', '')
 
         # Build layout description and panel visual briefs. The text from the
         # script is guidance for what to draw, not text to render in the image.
         layout_rows = []
         panels = []
+        panel_counts = []
         if 'rows' in page_data:
             for i, row in enumerate(page_data['rows'], 1):
                 if 'panels' in row:
                     panel_count = len(row['panels'])
+                    panel_counts.append(panel_count)
                     layout_rows.append(f"Row {i}: {panel_count} panel(s)")
                     for j, panel in enumerate(row['panels'], 1):
-                        panels.append(f"Row {i}, Panel {j} visual brief: {_panel_to_visual_brief(panel)}")
+                        if 'text' in panel:
+                            panels.append(f"Row {i}, Panel {j} visual brief: {panel['text']}")
 
         # Create layout description
         total_rows = len(layout_rows)
         layout_description = f"This page has {total_rows} rows:\n" + "\n".join(layout_rows)
+        single_panel_page = total_rows == 1 and panel_counts == [1]
 
         language_map = {
             'zh': 'Chinese (简体中文)',
@@ -481,44 +456,23 @@ class ImageService:
         if character_info and len(character_info) > 0:
             char_descriptions = []
             for idx, (char_name, _) in enumerate(character_info, 1):
-                char_descriptions.append(f"  - Reference image #{idx}: Character named '{char_name}'")
+                char_descriptions.append(
+                    f"  - Reference image #{idx}: locked character asset `{char_name}`. "
+                    "Preserve the exact character identity from this image: species, face shape, eye color, ear shape/length, body proportions, outfit/uniform, clothing colors, belt, badges, accessories, and overall silhouette."
+                )
             character_ref_section = """
 
 ## Character Reference Images
-The following reference images are provided to show what specific characters look like.
+The following reference images are locked character assets, not loose inspiration.
 You MUST draw these characters exactly as shown in their reference images:
 {char_list}
 
-IMPORTANT: When any of these characters appear in the comic panels, you MUST use their exact appearance from the reference images - same face, hair, clothing, and style.""".format(
+IMPORTANT:
+- When any locked character appears in the comic panels, use the corresponding reference image as the definitive source.
+- Do not redesign, age-shift, simplify into a different cute character, change clothing, change uniform, change eye color, or change body proportions.
+- If the scene action conflicts with the outfit, keep the reference outfit and change only the pose/expression/action.""".format(
                 char_list="\n".join(char_descriptions)
             )
-
-        story_bible_section = ""
-        if story_bible:
-            story_bible_section = """
-
-## Story Bible (Authoritative)
-Use this as the source of truth for character identity, scene layout, props, visual rules, and forbidden details:
-{story_bible}
-""".format(story_bible=json.dumps(story_bible, ensure_ascii=False, indent=2))
-
-        continuity_section = ""
-        if continuity_context:
-            continuity_section = """
-
-## Continuity Context From Previous Pages
-Preserve these states unless the current panel explicitly changes them:
-{continuity_context}
-""".format(continuity_context=json.dumps(continuity_context, ensure_ascii=False, indent=2))
-
-        lock_requirements = []
-        if consistency_options.get('character_lock', True):
-            lock_requirements.append("- Character Lock: Character appearance, face, hair, body design, and clothing are fixed by the reference images and story bible. Do not redesign or change outfits.")
-        if consistency_options.get('scene_lock', True):
-            lock_requirements.append("- Scene Lock: Preserve registered location layout, camera-side landmarks, lighting continuity, and fixed props from the story bible and continuity context.")
-        if consistency_options.get('prop_lock', True):
-            lock_requirements.append("- Prop Lock: Keep key props visually consistent in shape, color, placement, and ownership.")
-        lock_section = "\n".join(lock_requirements)
 
         # Main prompt content
         prompt_content = """Using the style of {comic_style}, create a comic page made of illustration panels. Use the panel details only as visual briefs for what should be drawn.
@@ -532,31 +486,32 @@ Preserve these states unless the current panel explicitly changes them:
 {title}
 
 ## Panel Visual Briefs
-{panels}{character_ref_section}{story_bible_section}{continuity_section}"""
+{panels}{character_ref_section}"""
 
         # Build character reference requirement if available
         char_ref_requirement = ""
         if character_info and len(character_info) > 0:
             char_names = [name for name, _ in character_info]
             char_ref_requirement = f"""
-- Character Reference Images: The first {len(character_info)} provided image(s) are character reference images showing what specific characters look like. When drawing characters named {', '.join(char_names)}, you MUST match their appearance exactly as shown in these reference images."""
+- Character Reference Images: The first {len(character_info)} provided image(s) are locked character reference images for {', '.join(char_names)}. Match the exact face, eye color, ear shape, body proportions, outfit/uniform, clothing colors, belt, badges, and accessories from those images. Do not replace a uniform with casual clothes or redesign the character as a younger/cuter variant."""
 
         # Requirements section (positive guidance only)
+        single_panel_requirement = ""
+        if single_panel_page:
+            single_panel_requirement = "\n- **SINGLE PANEL PAGE (CRITICAL)**: This page must be one full-page illustration panel only. Do NOT split it into multiple rows, multiple panels, comic strips, or repeated views."
+
         requirements_content = """- **LAYOUT (CRITICAL)**: You MUST strictly follow the page layout specified above. If Row 1 has 1 panel, draw 1 panel in the first row. If Row 2 has 2 panels, draw 2 panels side by side in the second row. Do NOT change the number of rows or panels per row.
 - **ILLUSTRATION ONLY (CRITICAL)**: Draw the described scenes directly. Do NOT render the panel descriptions, visual briefs, captions, labels, titles, row names, panel names, or prompt text anywhere in the image.
 - Maintain consistency in characters and scenes.
 - The image should be colorful and vibrant.
-- Dialogue Text: If a panel includes dialogue, render it only as a compact speech bubble near the speaking character. Use the exact dialogue text only. Do NOT render speaker names, subtitles, captions, labels, or repeated dialogue. If the text may become misspelled or garbled, omit the text rather than rendering incorrect text.
 - Avoid speech bubbles unless the visual brief explicitly requires dialogue inside the scene.
 - When text is explicitly required by the story, keep it minimal and use {target_lang}.
 - Maintain consistent and uniform margins around the entire comic page.
 - Ensure equal spacing on all sides (top, bottom, left, right) for a professional appearance.
-- Character Consistency: Use the provided reference images as the definitive source for character appearances. Carry over the exact facial features, hair styles, and identical clothing/outfits.
-- Use the provided blank sketch/layout reference image to preserve the row and panel composition.
-{lock_section}{char_ref_requirement}"""
+- Character Consistency: Use the provided reference images as the definitive source for character appearances. Carry over the exact facial features, hair styles, and identical clothing/outfits.{single_panel_requirement}{char_ref_requirement}"""
 
         # Negative prompt (all negative constraints)
-        negative_prompt = "rendered panel descriptions, visual brief text, captions above panels, labels above images, prompt text, title text, row labels, panel labels, panel indices visible, panel numbers shown, speaker name labels, character name labels, subtitle-style dialogue, repeated dialogue text, duplicate speech text, speech bubbles unless explicitly required, cluttered dialogue, verbose dialogue, overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, clothing changes without script requirement, layout deviation from sketch, costume changes"
+        negative_prompt = "rendered panel descriptions, visual brief text, captions above panels, labels above images, prompt text, title text, row labels, panel labels, panel indices visible, panel numbers shown, extra rows, extra panels, split comic strip when one panel is requested, repeated views, speech bubbles unless explicitly required, cluttered dialogue, verbose dialogue, overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, casual clothing replacing a uniform, missing belt, missing badge, wrong eye color, childlike redesign, younger variant, clothing changes without script requirement, layout deviation from sketch, costume changes"
         
         # Format the content
         formatted_prompt = prompt_content.format(
@@ -565,15 +520,13 @@ Preserve these states unless the current panel explicitly changes them:
             layout_description=layout_description,
             panels="\n".join(panels),
             target_lang=target_lang,
-            character_ref_section=character_ref_section,
-            story_bible_section=story_bible_section,
-            continuity_section=continuity_section
+            character_ref_section=character_ref_section
         )
         
         formatted_requirements = requirements_content.format(
             comic_style=comic_style,
             target_lang=target_lang,
-            lock_section=lock_section,
+            single_panel_requirement=single_panel_requirement,
             char_ref_requirement=char_ref_requirement
         )
         

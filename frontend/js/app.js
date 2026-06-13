@@ -9,14 +9,6 @@ class UIController {
         this.isGenerating = false;
         this.isViewingImage = false;
         this.generatedPagesImages = {}; // Store generated images by page index for reference
-        this.storyBible = null;
-        this.continuitySummaries = [];
-        this.reviewNotes = [];
-        this.consistencyOptions = {
-            character_lock: true,
-            scene_lock: true,
-            prop_lock: true
-        };
 
         // Initialize reference image state
         this.referenceImage = null;
@@ -72,9 +64,6 @@ class UIController {
         this.prevBtn = document.getElementById('prev-btn');
         this.nextBtn = document.getElementById('next-btn');
         this.optimizeBtn = document.getElementById('optimize-btn');
-        this.ideaBtn = document.getElementById('idea-btn');
-        this.reviewBtn = document.getElementById('review-script-btn');
-        this.storyBibleBtn = document.getElementById('story-bible-btn');
 
         // Status elements
         this.aiStatus = document.getElementById('ai-status');
@@ -137,12 +126,6 @@ class UIController {
             this.updateGenerateButtonState();
         });
 
-        if (this.renderer) {
-            this.renderer.setRewriteHandler((panel, context) => {
-                this.rewritePanel(panel, context, 'make this panel clearer and more visual');
-            });
-        }
-
         // Save session state when style or language changes
         if (this.comicStyleSelect) {
             this.comicStyleSelect.addEventListener('change', () => {
@@ -179,14 +162,6 @@ class UIController {
                 this.saveCurrentSessionState();
             });
         }
-
-        document.querySelectorAll('[data-consistency-option]').forEach(input => {
-            input.addEventListener('change', () => {
-                const key = input.getAttribute('data-consistency-option');
-                this.consistencyOptions[key] = input.checked;
-                this.saveCurrentSessionState();
-            });
-        });
     }
 
     /**
@@ -492,15 +467,11 @@ class UIController {
                 comicStyle,
                 language,
                 rowsPerPage,
-                googleApiKey,
-                this.storyBible
+                googleApiKey
             );
 
             // Reset generated images when loading new JSON
             this.generatedPagesImages = {};
-            this.storyBible = result.story_bible || this.storyBible || null;
-            this.continuitySummaries = result.continuity_summaries || [];
-            this.reviewNotes = result.review_notes || [];
 
             // Hide cover generation button
             const coverBtn = document.getElementById('generate-cover-btn');
@@ -527,7 +498,6 @@ class UIController {
 
             // Load first page
             this.loadCurrentPage();
-            this.updateProductionPanel();
 
             // Show success
             this.showStatus(window.i18n.t('statusSuccess', { count: result.page_count }), 'success');
@@ -672,319 +642,6 @@ class UIController {
         if (this.pageManager.getPageCount() > 0) {
             this.pageManager.updateCurrentPage(data);
         }
-        this.reviewNotes = [];
-        this.updateProductionPanel();
-    }
-
-    /**
-     * Ensure the latest inline script edits are in pageManager before actions
-     * that read page data for API calls or navigation.
-     */
-    syncCurrentScriptEdits() {
-        if (this.renderer && this.renderer.syncEdits) {
-            this.renderer.syncEdits();
-        }
-    }
-
-    /**
-     * Get continuity summaries before the target page.
-     * @param {number} pageIndex Zero-based page index
-     * @returns {Array} Continuity summaries
-     */
-    getContinuityContext(pageIndex) {
-        if (!Array.isArray(this.continuitySummaries)) return [];
-        return this.continuitySummaries
-            .filter(summary => {
-                const pageNum = typeof summary.page === 'number' ? summary.page : parseInt(summary.page, 10);
-                return pageNum && pageNum <= pageIndex;
-            })
-            .slice(-4);
-    }
-
-    /**
-     * Refresh the compact production metadata panel.
-     */
-    updateProductionPanel() {
-        const panel = document.getElementById('production-panel');
-        if (!panel) return;
-
-        const characterCount = this.storyBible && Array.isArray(this.storyBible.characters) ? this.storyBible.characters.length : 0;
-        const locationCount = this.storyBible && Array.isArray(this.storyBible.locations) ? this.storyBible.locations.length : 0;
-        const issueCount = Array.isArray(this.reviewNotes) ? this.reviewNotes.length : 0;
-        const continuityCount = Array.isArray(this.continuitySummaries) ? this.continuitySummaries.length : 0;
-
-        panel.innerHTML = `
-            <div class="production-metrics">
-                <button onclick="showStoryBible()" class="production-chip" title="Story Bible">角色 ${characterCount} · 场景 ${locationCount}</button>
-                <button onclick="reviewCurrentScript()" class="production-chip ${issueCount ? 'has-warning' : ''}" title="Review">${issueCount ? issueCount + ' 条提醒' : '脚本清爽'}</button>
-                <span class="production-chip passive">连续性 ${continuityCount}</span>
-            </div>
-        `;
-    }
-
-    /**
-     * Open a compact story bible viewer.
-     */
-    showStoryBible() {
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'flex';
-
-        const content = document.createElement('div');
-        content.className = 'modal-content story-bible-modal';
-
-        const title = document.createElement('h3');
-        title.innerText = window.i18n ? window.i18n.t('storyBibleTitle') : 'Story Bible';
-
-        const pre = document.createElement('pre');
-        pre.className = 'story-bible-json';
-        pre.textContent = JSON.stringify({
-            story_bible: this.storyBible || {},
-            continuity_summaries: this.continuitySummaries || [],
-            review_notes: this.reviewNotes || []
-        }, null, 2);
-
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'save-config-btn';
-        closeBtn.innerText = window.i18n ? window.i18n.t('btnClose') : 'Close';
-        closeBtn.onclick = () => document.body.removeChild(modal);
-
-        content.appendChild(title);
-        content.appendChild(pre);
-        content.appendChild(closeBtn);
-        modal.appendChild(content);
-        modal.onclick = (event) => {
-            if (event.target === modal) document.body.removeChild(modal);
-        };
-        document.body.appendChild(modal);
-    }
-
-    /**
-     * Ask AI for three story directions and let the user pick one.
-     */
-    async generateStoryIdeas() {
-        const apiKey = this.apiKeyInput.value.trim();
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        const prompt = this.promptInput.value.trim();
-        if (!apiKey && !googleApiKey) {
-            alert(window.i18n.t('alertNoApiKey') || 'Please enter OpenAI API Key or Google API Key');
-            return;
-        }
-        if (!prompt) {
-            alert(window.i18n.t('alertNoPrompt'));
-            return;
-        }
-
-        try {
-            if (this.ideaBtn) {
-                this.ideaBtn.disabled = true;
-                this.ideaBtn.classList.add('loading');
-            }
-            this.showStatus(window.i18n ? window.i18n.t('statusGeneratingIdeas') : 'Generating ideas...', 'info');
-            const config = ConfigManager.getCurrentConfig();
-            const result = await ComicAPI.generateStoryIdeas(
-                apiKey,
-                googleApiKey,
-                prompt,
-                config.baseUrl,
-                config.model,
-                this.comicStyleSelect.value,
-                this.comicLanguageSelect.value
-            );
-
-            this.displayStoryIdeas(result.ideas || []);
-            this.showStatus(window.i18n ? window.i18n.t('statusIdeasSuccess') : 'Ideas ready', 'success');
-            setTimeout(() => this.hideStatus(), 2500);
-        } catch (error) {
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-            alert(error.message);
-        } finally {
-            if (this.ideaBtn) {
-                this.ideaBtn.disabled = false;
-                this.ideaBtn.classList.remove('loading');
-            }
-        }
-    }
-
-    /**
-     * Display selectable story ideas.
-     * @param {Array} ideas Story ideas
-     */
-    displayStoryIdeas(ideas) {
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'flex';
-
-        const content = document.createElement('div');
-        content.className = 'modal-content ideas-modal';
-
-        const header = document.createElement('div');
-        header.className = 'modal-header';
-        const title = document.createElement('h3');
-        title.innerText = window.i18n ? window.i18n.t('ideasTitle') : 'Story Directions';
-        const close = document.createElement('button');
-        close.className = 'modal-close-btn';
-        close.innerHTML = '&times;';
-        close.onclick = () => document.body.removeChild(modal);
-        header.appendChild(title);
-        header.appendChild(close);
-
-        const list = document.createElement('div');
-        list.className = 'ideas-list';
-        ideas.forEach(idea => {
-            const item = document.createElement('button');
-            item.className = 'idea-card';
-            item.innerHTML = `
-                <strong>${idea.title || ''}</strong>
-                <span>${idea.logline || ''}</span>
-                <small>${idea.conflict || ''}</small>
-            `;
-            item.onclick = () => {
-                const chosen = [
-                    idea.title,
-                    idea.logline,
-                    idea.characters && idea.characters.length ? `角色：${idea.characters.join('、')}` : '',
-                    idea.conflict ? `冲突：${idea.conflict}` : '',
-                    idea.ending ? `结尾：${idea.ending}` : ''
-                ].filter(Boolean).join('\n');
-                this.promptInput.value = chosen;
-                this.saveCurrentSessionState();
-                document.body.removeChild(modal);
-            };
-            list.appendChild(item);
-        });
-
-        content.appendChild(header);
-        content.appendChild(list);
-        modal.appendChild(content);
-        document.body.appendChild(modal);
-    }
-
-    /**
-     * Review all current script pages.
-     */
-    async reviewCurrentScript() {
-        this.syncCurrentScriptEdits();
-        const pages = this.pageManager.getAllPages();
-        if (!pages || pages.length === 0) {
-            alert(window.i18n.t('alertNoComicData'));
-            return;
-        }
-        try {
-            const result = await ComicAPI.reviewScript(pages, this.storyBible, this.comicLanguageSelect.value);
-            this.reviewNotes = result.review_notes || [];
-            if (result.cleaned_pages && Array.isArray(result.cleaned_pages)) {
-                const currentIndex = this.pageManager.getCurrentPageIndex();
-                this.pageManager.setPages(result.cleaned_pages);
-                this.pageManager.setCurrentPageIndex(Math.min(currentIndex, result.cleaned_pages.length - 1));
-                const currentPage = this.pageManager.getCurrentPage();
-                if (currentPage) {
-                    this.jsonInput.value = JSON.stringify(currentPage, null, 2);
-                    this.renderComic();
-                }
-            }
-            this.updateProductionPanel();
-            this.showReviewModal();
-            this.saveCurrentSessionState();
-        } catch (error) {
-            alert(error.message);
-        }
-    }
-
-    showReviewModal() {
-        const notes = this.reviewNotes || [];
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'flex';
-        const content = document.createElement('div');
-        content.className = 'modal-content review-modal';
-        const title = document.createElement('h3');
-        title.innerText = notes.length ? `脚本审稿 · ${notes.length} 条提醒` : '脚本审稿 · 暂无问题';
-        const list = document.createElement('div');
-        list.className = 'review-list';
-        if (notes.length === 0) {
-            list.innerHTML = '<div class="review-empty">当前脚本没有明显生产风险。</div>';
-        } else {
-            notes.forEach(note => {
-                const item = document.createElement('div');
-                item.className = `review-item ${note.severity || 'info'}`;
-                item.innerHTML = `<strong>${note.location || ''}</strong><span>${note.message || ''}</span><small>${note.suggestion || ''}</small>`;
-                list.appendChild(item);
-            });
-        }
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'save-config-btn';
-        closeBtn.innerText = window.i18n ? window.i18n.t('btnClose') : 'Close';
-        closeBtn.onclick = () => document.body.removeChild(modal);
-        content.appendChild(title);
-        content.appendChild(list);
-        content.appendChild(closeBtn);
-        modal.appendChild(content);
-        modal.onclick = (event) => {
-            if (event.target === modal) document.body.removeChild(modal);
-        };
-        document.body.appendChild(modal);
-    }
-
-    /**
-     * Rewrite one structured panel using nearby panel context.
-     */
-    async rewritePanel(panel, context, instruction) {
-        this.syncCurrentScriptEdits();
-        const apiKey = this.apiKeyInput.value.trim();
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        if (!apiKey && !googleApiKey) {
-            alert(window.i18n.t('alertNoApiKey') || 'Please enter OpenAI API Key or Google API Key');
-            return;
-        }
-
-        const pageData = this.pageManager.getCurrentPage();
-        if (!pageData || !context) return;
-
-        const flat = [];
-        pageData.rows.forEach((row, rowIndex) => {
-            row.panels.forEach((panelData, panelIndex) => {
-                flat.push({ rowIndex, panelIndex, panel: panelData });
-            });
-        });
-        const currentFlatIndex = flat.findIndex(item => item.rowIndex === context.rowIndex && item.panelIndex === context.panelIndex);
-        const beforePanel = currentFlatIndex > 0 ? flat[currentFlatIndex - 1].panel : null;
-        const afterPanel = currentFlatIndex >= 0 && currentFlatIndex < flat.length - 1 ? flat[currentFlatIndex + 1].panel : null;
-
-        try {
-            this.showStatus(window.i18n ? window.i18n.t('statusRewritingPanel') : 'Rewriting panel...', 'info');
-            const config = ConfigManager.getCurrentConfig();
-            const result = await ComicAPI.rewritePanel(
-                apiKey,
-                googleApiKey,
-                panel,
-                this.storyBible || {},
-                beforePanel,
-                afterPanel,
-                instruction,
-                config.baseUrl,
-                config.model,
-                this.comicStyleSelect.value,
-                this.comicLanguageSelect.value
-            );
-
-            if (result.success && result.panel) {
-                pageData.rows[context.rowIndex].panels[context.panelIndex] = result.panel;
-                if (result.review_notes && result.review_notes.length) {
-                    this.reviewNotes = result.review_notes;
-                }
-                this.jsonInput.value = JSON.stringify(pageData, null, 2);
-                this.pageManager.updateCurrentPage(pageData);
-                this.renderComic();
-                this.updateProductionPanel();
-                this.saveCurrentSessionState();
-                this.showStatus(window.i18n ? window.i18n.t('statusRewriteSuccess') : 'Panel rewritten', 'success');
-                setTimeout(() => this.hideStatus(), 2000);
-            }
-        } catch (error) {
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-            alert(error.message);
-        }
     }
 
     /**
@@ -1045,7 +702,6 @@ class UIController {
      * Go to previous page
      */
     prevPage() {
-        this.syncCurrentScriptEdits();
         if (this.pageManager.prevPage()) {
             this.loadCurrentPage();
             this.saveCurrentSessionState();
@@ -1056,7 +712,6 @@ class UIController {
      * Go to next page
      */
     nextPage() {
-        this.syncCurrentScriptEdits();
         if (this.pageManager.nextPage()) {
             this.loadCurrentPage();
             this.saveCurrentSessionState();
@@ -1118,7 +773,6 @@ class UIController {
      * Generate final comic image from current page
      */
     async generateFinalImage() {
-        this.syncCurrentScriptEdits();
         const pageData = this.pageManager.getCurrentPage();
 
         if (!pageData) {
@@ -1194,7 +848,6 @@ class UIController {
                 if (!previousPages) previousPages = [];
                 previousPages.unshift(this.referenceImage);
             }
-            const continuityContext = this.getContinuityContext(currentPageIndex);
 
             // Call API to generate image with sketch as reference
             const result = await ComicAPI.generateComicImage(
@@ -1204,10 +857,7 @@ class UIController {
                 previousPages,
                 comicStyle,
                 rowsPerPage,
-                language,
-                this.storyBible,
-                continuityContext,
-                this.consistencyOptions
+                language
             );
 
             if (result.success && result.image_url) {
@@ -1270,7 +920,6 @@ class UIController {
 
                 // Save session state immediately
                 this.saveCurrentSessionState();
-                this.updateProductionPanel();
             } else {
                 throw new Error('Image generation failed');
             }
@@ -1355,7 +1004,6 @@ class UIController {
      * Uses previous generated pages as reference for consistency
      */
     async generateAllPagesImages() {
-        this.syncCurrentScriptEdits();
         const totalPages = this.pageManager.getPageCount();
 
         if (totalPages === 0) {
@@ -1440,7 +1088,6 @@ class UIController {
                     if (!previousPages) previousPages = [];
                     previousPages.unshift(this.referenceImage);
                 }
-                const continuityContext = this.getContinuityContext(i);
 
                 // Generate image with sketch and previous pages as reference
                 // Pass sketch as reference_img and previous pages as extra_body
@@ -1451,10 +1098,7 @@ class UIController {
                     previousPages,  // Pass previous pages as extra_body parameter
                     comicStyle,
                     rowsPerPage,
-                    this.comicLanguageSelect.value,
-                    this.storyBible,
-                    continuityContext,
-                    this.consistencyOptions
+                    this.comicLanguageSelect.value
                 );
 
                 if (result.success && result.image_url) {
@@ -1508,7 +1152,6 @@ class UIController {
 
                     // Save session state after each page generation
                     this.saveCurrentSessionState();
-                    this.updateProductionPanel();
                 } else {
                     throw new Error(`第 ${i + 1} 页生成失败`);
                 }
@@ -2258,11 +1901,7 @@ class UIController {
             pageCount: this.pageCountInput ? parseInt(this.pageCountInput.value) : 3,
             rowsPerPage: this.rowsPerPageSelect ? parseInt(this.rowsPerPageSelect.value) : 4,
             prompt: this.promptInput ? this.promptInput.value : '',
-            referenceImage: this.referenceImage,
-            storyBible: this.storyBible,
-            continuitySummaries: this.continuitySummaries,
-            reviewNotes: this.reviewNotes,
-            consistencyOptions: this.consistencyOptions
+            referenceImage: this.referenceImage
         });
     }
 
@@ -2323,19 +1962,6 @@ class UIController {
             }
         }
 
-        this.storyBible = session.storyBible || null;
-        this.continuitySummaries = session.continuitySummaries || [];
-        this.reviewNotes = session.reviewNotes || [];
-        this.consistencyOptions = session.consistencyOptions || {
-            character_lock: true,
-            scene_lock: true,
-            prop_lock: true
-        };
-        document.querySelectorAll('[data-consistency-option]').forEach(input => {
-            const key = input.getAttribute('data-consistency-option');
-            input.checked = this.consistencyOptions[key] !== false;
-        });
-
         // Restore comic data
         if (session.comicData && session.comicData.pages) {
             this.pageManager.setPages(session.comicData.pages);
@@ -2379,7 +2005,6 @@ class UIController {
         if (this.pageManager.getPageCount() > 0) {
             this.loadCurrentPage();
         }
-        this.updateProductionPanel();
     }
 
     /**
@@ -2398,9 +2023,6 @@ class UIController {
 
         // Clear and reset current state
         this.generatedPagesImages = {};
-        this.storyBible = null;
-        this.continuitySummaries = [];
-        this.reviewNotes = [];
         this.pageManager.setPages([]);
         this.jsonInput.value = '';
 
@@ -2465,9 +2087,6 @@ class UIController {
 
         // Clear current state
         this.generatedPagesImages = {};
-        this.storyBible = null;
-        this.continuitySummaries = [];
-        this.reviewNotes = [];
         this.pageManager.setPages([]);
         this.jsonInput.value = '';
 
@@ -2680,18 +2299,6 @@ function generateWithAI() {
     if (app) app.generateWithAI();
 }
 
-function generateStoryIdeas() {
-    if (app) app.generateStoryIdeas();
-}
-
-function showStoryBible() {
-    if (app) app.showStoryBible();
-}
-
-function reviewCurrentScript() {
-    if (app) app.reviewCurrentScript();
-}
-
 function renderComic() {
     if (app) app.renderComic();
 }
@@ -2902,3 +2509,4 @@ function optimizePrompt() {
         app.optimizePrompt();
     }
 }
+

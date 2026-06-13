@@ -14,11 +14,11 @@ class ComicAPI {
      * @param {string} model - Model name
      * @param {string} comicStyle - Comic style (e.g., 'doraemon', 'manga', etc.)
      * @param {string} language - Comic language (e.g., 'zh', 'en', 'ja')
-     * @param {number} rowsPerPage - Number of rows per page (3-5)
+     * @param {number} rowsPerPage - Number of rows per page (1-5)
      * @param {string} googleApiKey - Google API key for fallback or direct use
      * @returns {Promise<Object>} Generated comic pages
      */
-    static async generateComic(apiKey, prompt, pageCount, baseUrl, model, comicStyle = 'doraemon', language = 'zh', rowsPerPage = 4, googleApiKey = null, storyBible = null) {
+    static async generateComic(apiKey, prompt, pageCount, baseUrl, model, comicStyle = 'doraemon', language = 'zh', rowsPerPage = 4, googleApiKey = null) {
         try {
             const response = await fetch(`${API_BASE_URL}/generate`, {
                 method: 'POST',
@@ -34,8 +34,7 @@ class ComicAPI {
                     comic_style: comicStyle,
                     language: language,
                     rows_per_page: rowsPerPage,
-                    google_api_key: googleApiKey,
-                    story_bible: storyBible
+                    google_api_key: googleApiKey
                 })
             });
 
@@ -102,7 +101,7 @@ class ComicAPI {
      * @param {string} language - Comic language (e.g., 'zh', 'en', 'ja')
      * @returns {Promise<Object>} Generated image result
      */
-    static async generateComicImage(pageData, googleApiKey, referenceImg = null, extraBody = null, comicStyle = 'doraemon', rowsPerPage = null, language = 'zh', storyBible = null, continuityContext = null, consistencyOptions = null) {
+    static async generateComicImage(pageData, googleApiKey, referenceImg = null, extraBody = null, comicStyle = 'doraemon', rowsPerPage = null, language = 'zh') {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-image`, {
                 method: 'POST',
@@ -116,10 +115,7 @@ class ComicAPI {
                     extra_body: extraBody,
                     comic_style: comicStyle,
                     rows_per_page: rowsPerPage,
-                    language: language,
-                    story_bible: storyBible,
-                    continuity_context: continuityContext,
-                    consistency_options: consistencyOptions
+                    language: language
                 })
             });
 
@@ -259,99 +255,6 @@ class ComicAPI {
             return data;
         } catch (error) {
             console.error('Prompt optimization failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Generate three story directions for inspiration.
-     */
-    static async generateStoryIdeas(apiKey, googleApiKey, prompt, baseUrl, model, comicStyle = 'doraemon', language = 'zh') {
-        try {
-            const response = await fetch(`${API_BASE_URL}/story-ideas`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    api_key: apiKey,
-                    google_api_key: googleApiKey,
-                    prompt: prompt,
-                    base_url: baseUrl,
-                    model: model,
-                    comic_style: comicStyle,
-                    language: language
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `API request failed: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Story ideas generation failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Review a script for production issues.
-     */
-    static async reviewScript(pages, storyBible = null, language = 'zh') {
-        try {
-            const response = await fetch(`${API_BASE_URL}/review-script`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    pages: pages,
-                    story_bible: storyBible,
-                    language: language
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `API request failed: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Script review failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Rewrite one panel with context.
-     */
-    static async rewritePanel(apiKey, googleApiKey, panel, storyBible, beforePanel, afterPanel, instruction, baseUrl, model, comicStyle = 'doraemon', language = 'zh') {
-        try {
-            const response = await fetch(`${API_BASE_URL}/rewrite-panel`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    api_key: apiKey,
-                    google_api_key: googleApiKey,
-                    panel: panel,
-                    story_bible: storyBible,
-                    before_panel: beforePanel,
-                    after_panel: afterPanel,
-                    instruction: instruction,
-                    base_url: baseUrl,
-                    model: model,
-                    comic_style: comicStyle,
-                    language: language
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `API request failed: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Panel rewrite failed:', error);
             throw error;
         }
     }

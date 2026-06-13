@@ -54,14 +54,6 @@ class SessionManager {
             pageCount: config.pageCount || 3,
             rowsPerPage: config.rowsPerPage || 4,
             prompt: '',
-            storyBible: null,
-            continuitySummaries: [],
-            reviewNotes: [],
-            consistencyOptions: {
-                character_lock: true,
-                scene_lock: true,
-                prop_lock: true
-            },
             createdAt: now,
             updatedAt: now
         };
@@ -140,11 +132,6 @@ class SessionManager {
         if (data.pageCount !== undefined) session.pageCount = data.pageCount;
         if (data.rowsPerPage !== undefined) session.rowsPerPage = data.rowsPerPage;
         if (data.prompt !== undefined) session.prompt = data.prompt;
-        if (data.referenceImage !== undefined) session.referenceImage = data.referenceImage;
-        if (data.storyBible !== undefined) session.storyBible = data.storyBible;
-        if (data.continuitySummaries !== undefined) session.continuitySummaries = data.continuitySummaries;
-        if (data.reviewNotes !== undefined) session.reviewNotes = data.reviewNotes;
-        if (data.consistencyOptions !== undefined) session.consistencyOptions = data.consistencyOptions;
 
         session.updatedAt = new Date().toISOString();
 
