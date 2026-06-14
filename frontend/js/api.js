@@ -12,13 +12,15 @@ class ComicAPI {
      * @param {number} pageCount - Number of pages to generate
      * @param {string} baseUrl - OpenAI API base URL
      * @param {string} model - Model name
+     * @param {string} textProvider - Text provider ('codex', 'openai', or 'google')
+     * @param {string} reasoningEffort - Reasoning effort ('low', 'medium', or 'high')
      * @param {string} comicStyle - Comic style (e.g., 'doraemon', 'manga', etc.)
      * @param {string} language - Comic language (e.g., 'zh', 'en', 'ja')
      * @param {number} rowsPerPage - Number of rows per page (1-5)
      * @param {string} googleApiKey - Google API key for fallback or direct use
      * @returns {Promise<Object>} Generated comic pages
      */
-    static async generateComic(apiKey, prompt, pageCount, baseUrl, model, comicStyle = 'doraemon', language = 'zh', rowsPerPage = 4, googleApiKey = null) {
+    static async generateComic(apiKey, prompt, pageCount, baseUrl, model, textProvider = 'codex', reasoningEffort = 'medium', comicStyle = 'doraemon', language = 'zh', rowsPerPage = 4, googleApiKey = null) {
         try {
             const response = await fetch(`${API_BASE_URL}/generate`, {
                 method: 'POST',
@@ -31,6 +33,8 @@ class ComicAPI {
                     page_count: pageCount,
                     base_url: baseUrl,
                     model: model,
+                    text_provider: textProvider,
+                    reasoning_effort: reasoningEffort,
                     comic_style: comicStyle,
                     language: language,
                     rows_per_page: rowsPerPage,
@@ -93,15 +97,15 @@ class ComicAPI {
     /**
      * Generate final comic image from page data
      * @param {Object} pageData - Comic page data
-     * @param {string} googleApiKey - Google API key for image generation
      * @param {string} referenceImg - Optional reference image URL
      * @param {Object} extraBody - Optional extra parameters
      * @param {string} comicStyle - Comic style
      * @param {number} rowsPerPage - Optional rows per page constraint
      * @param {string} language - Comic language (e.g., 'zh', 'en', 'ja')
+     * @param {Object} imageConfig - Image provider/model settings
      * @returns {Promise<Object>} Generated image result
      */
-    static async generateComicImage(pageData, googleApiKey, referenceImg = null, extraBody = null, comicStyle = 'doraemon', rowsPerPage = null, language = 'zh') {
+    static async generateComicImage(pageData, referenceImg = null, extraBody = null, comicStyle = 'doraemon', rowsPerPage = null, language = 'zh', imageConfig = {}) {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-image`, {
                 method: 'POST',
@@ -110,7 +114,14 @@ class ComicAPI {
                 },
                 body: JSON.stringify({
                     page_data: pageData,
-                    google_api_key: googleApiKey,
+                    api_key: imageConfig.openaiApiKey || null,
+                    google_api_key: imageConfig.googleApiKey || null,
+                    base_url: imageConfig.baseUrl || 'https://api.openai.com/v1',
+                    image_provider: imageConfig.imageProvider || 'google',
+                    image_model: imageConfig.imageModel || 'gpt-image-2',
+                    image_size: imageConfig.imageSize || '1024x1536',
+                    image_quality: imageConfig.imageQuality || 'medium',
+                    reasoning_effort: imageConfig.reasoningEffort || 'medium',
                     reference_img: referenceImg,
                     extra_body: extraBody,
                     comic_style: comicStyle,
@@ -138,11 +149,13 @@ class ComicAPI {
      * @param {Array|Object} comicData - Comic pages data
      * @param {string} baseUrl - OpenAI API base URL
      * @param {string} model - Model name
+     * @param {string} textProvider - Text provider ('codex', 'openai', or 'google')
+     * @param {string} reasoningEffort - Reasoning effort ('low', 'medium', or 'high')
      * @param {string} platform - Platform type ('xiaohongshu' or 'twitter')
      * @param {string} googleApiKey - Google API key for fallback
      * @returns {Promise<Object>} Generated social media content
      */
-    static async generateSocialMediaContent(apiKey, comicData, baseUrl, model, platform = 'xiaohongshu', googleApiKey = null) {
+    static async generateSocialMediaContent(apiKey, comicData, baseUrl, model, textProvider = 'codex', reasoningEffort = 'medium', platform = 'xiaohongshu', googleApiKey = null) {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-xiaohongshu`, {
                 method: 'POST',
@@ -154,6 +167,8 @@ class ComicAPI {
                     comic_data: comicData,
                     base_url: baseUrl,
                     model: model,
+                    text_provider: textProvider,
+                    reasoning_effort: reasoningEffort,
                     platform: platform,
                     google_api_key: googleApiKey
                 })
@@ -177,20 +192,19 @@ class ComicAPI {
      * @deprecated Use generateSocialMediaContent instead
      */
     static async generateXiaohongshuContent(apiKey, comicData, baseUrl, model) {
-        return this.generateSocialMediaContent(apiKey, comicData, baseUrl, model, 'xiaohongshu');
+        return this.generateSocialMediaContent(apiKey, comicData, baseUrl, model, 'openai', 'medium', 'xiaohongshu');
     }
 
     /**
      * Generate comic cover
-     * @param {string} apiKey - API Key
+     * @param {string} reasoningEffort - Reasoning effort ('low', 'medium', or 'high')
      * @param {string} comicStyle - Comic style
      * @param {Array} referenceImages - List of reference images
+     * @param {Object} imageConfig - Image provider/model settings
      * @returns {Promise<Object>} Generation result
      */
-    static async generateCover(apiKey, comicStyle, referenceImages = null, language = 'en', customRequirements = '') {
+    static async generateCover(comicStyle, referenceImages = null, language = 'en', customRequirements = '', imageConfig = {}) {
         try {
-            const config = ConfigManager.getCurrentConfig();
-
             const response = await fetch(`${API_BASE_URL}/generate-cover`, {
                 method: 'POST',
                 headers: {
@@ -198,7 +212,14 @@ class ComicAPI {
                 },
                 body: JSON.stringify({
                     comic_style: comicStyle,
-                    google_api_key: apiKey, // Using Google API Key for image generation
+                    api_key: imageConfig.openaiApiKey || null,
+                    google_api_key: imageConfig.googleApiKey || null,
+                    base_url: imageConfig.baseUrl || 'https://api.openai.com/v1',
+                    image_provider: imageConfig.imageProvider || 'google',
+                    image_model: imageConfig.imageModel || 'gpt-image-2',
+                    image_size: imageConfig.imageSize || '1024x1536',
+                    image_quality: imageConfig.imageQuality || 'medium',
+                    reasoning_effort: imageConfig.reasoningEffort || 'medium',
                     reference_imgs: referenceImages,
                     language: language,
                     custom_requirements: customRequirements
@@ -228,7 +249,7 @@ class ComicAPI {
      * @param {string} language - Language
      * @returns {Promise<Object>} Optimization result
      */
-    static async optimizePrompt(apiKey, googleApiKey, prompt, baseUrl, model, comicStyle = 'doraemon', language = 'zh') {
+    static async optimizePrompt(apiKey, googleApiKey, prompt, baseUrl, model, textProvider = 'codex', reasoningEffort = 'medium', comicStyle = 'doraemon', language = 'zh') {
         try {
             const response = await fetch(`${API_BASE_URL}/optimize-prompt`, {
                 method: 'POST',
@@ -241,6 +262,8 @@ class ComicAPI {
                     prompt: prompt,
                     base_url: baseUrl,
                     model: model,
+                    text_provider: textProvider,
+                    reasoning_effort: reasoningEffort,
                     comic_style: comicStyle,
                     language: language
                 })
@@ -267,10 +290,11 @@ class ComicAPI {
      * @param {Object} comicData - Generated comic data (optional)
      * @param {string} baseUrl - OpenAI API base URL
      * @param {string} model - Model name
+     * @param {string} reasoningEffort - Reasoning effort ('low', 'medium', or 'high')
      * @param {string} language - Language
      * @returns {Promise<Object>} Title generation result
      */
-    static async generateSessionTitle(apiKey, googleApiKey, prompt, comicData = null, baseUrl = 'https://api.openai.com/v1', model = 'gpt-4o-mini', language = 'zh') {
+    static async generateSessionTitle(apiKey, googleApiKey, prompt, comicData = null, baseUrl = 'https://api.openai.com/v1', model = 'gpt-5.5', textProvider = 'codex', reasoningEffort = 'medium', language = 'zh') {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-session-title`, {
                 method: 'POST',
@@ -284,6 +308,8 @@ class ComicAPI {
                     comic_data: comicData,
                     base_url: baseUrl,
                     model: model,
+                    text_provider: textProvider,
+                    reasoning_effort: reasoningEffort,
                     language: language
                 })
             });

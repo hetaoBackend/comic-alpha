@@ -6,7 +6,7 @@ import requests
 import json
 import copy
 from typing import List, Dict, Any, Optional, Union, Tuple
-from comic_generator import generate_social_media_image_core
+from comic_generator import generate_codex_image_core, generate_openai_image_core, generate_social_media_image_core
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,22 @@ class ImageService:
         return os.path.dirname(backend_dir)
 
     @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        try:
+            return max(0, int(os.getenv(name, str(default))))
+        except ValueError:
+            logger.warning("Invalid %s value; using default %s", name, default)
+            return default
+
+    @staticmethod
+    def _codex_max_previous_page_references() -> int:
+        return ImageService._env_int("CODEX_MAX_PREVIOUS_PAGE_REFERENCES", 2)
+
+    @staticmethod
+    def _codex_max_cover_page_references() -> int:
+        return ImageService._env_int("CODEX_MAX_COVER_PAGE_REFERENCES", 4)
+
+    @staticmethod
     def _reference_dir(comic_style: str) -> str:
         return os.path.join(ImageService._project_root(), ImageService.REFER_IMAGE_BASE_PATH, comic_style)
 
@@ -64,6 +80,64 @@ class ImageService:
         return [character for character in characters if isinstance(character, dict)]
 
     @staticmethod
+    def get_reference_character_profiles(comic_style: str) -> List[Dict[str, Any]]:
+        """Return one profile per available local reference image.
+
+        characters.json is optional: filenames are always usable as exact aliases,
+        and metadata only enriches matching image references with extra aliases.
+        """
+        style_references = ImageService.get_style_reference_images(comic_style)
+        profiles = {}
+        for reference_name, image_path in style_references:
+            profiles[reference_name] = {
+                "aliases": [reference_name],
+                "reference_name": reference_name,
+                "safe_id": reference_name,
+                "display_name": reference_name,
+                "role_hint": "",
+                "image_path": image_path,
+            }
+
+        for character in ImageService._load_reference_character_meta(comic_style):
+            reference_name = character.get("reference_name") or character.get("display_name")
+            if reference_name not in profiles:
+                logger.warning(
+                    "Ignoring reference character metadata for %s because no matching image exists in %s",
+                    reference_name,
+                    comic_style
+                )
+                continue
+
+            aliases = [
+                alias for alias in character.get("aliases", [])
+                if isinstance(alias, str) and alias.strip()
+            ]
+            for value in [
+                reference_name,
+                character.get("display_name"),
+                character.get("safe_id"),
+            ]:
+                if isinstance(value, str) and value.strip():
+                    aliases.append(value)
+
+            deduped_aliases = []
+            seen = set()
+            for alias in aliases:
+                if alias in seen:
+                    continue
+                seen.add(alias)
+                deduped_aliases.append(alias)
+
+            profiles[reference_name].update({
+                "aliases": deduped_aliases or [reference_name],
+                "safe_id": character.get("safe_id") or reference_name,
+                "display_name": character.get("display_name") or reference_name,
+                "role_hint": character.get("role_hint", ""),
+            })
+
+        return list(profiles.values())
+
+    @staticmethod
     def resolve_reference_characters(comic_style: str, text: str) -> List[Dict[str, Any]]:
         """Map user-facing aliases to safe names and local reference images."""
         if not text:
@@ -72,7 +146,7 @@ class ImageService:
         text_lower = text.lower()
         matched = []
         seen = set()
-        for character in ImageService._load_reference_character_meta(comic_style):
+        for character in ImageService.get_reference_character_profiles(comic_style):
             aliases = [alias for alias in character.get("aliases", []) if isinstance(alias, str) and alias]
             if not any(alias in text or alias.lower() in text_lower for alias in aliases):
                 continue
@@ -94,7 +168,7 @@ class ImageService:
 
     @staticmethod
     def _reference_label(comic_style: str, reference_name: str) -> str:
-        for character in ImageService._load_reference_character_meta(comic_style):
+        for character in ImageService.get_reference_character_profiles(comic_style):
             if character.get("reference_name") == reference_name:
                 display_name = character.get("display_name")
                 safe_id = character.get("safe_id")
@@ -112,7 +186,7 @@ class ImageService:
             sanitized = value
             for source, replacement in ImageService.SAFE_TEXT_REPLACEMENTS.get(comic_style, {}).items():
                 sanitized = sanitized.replace(source, replacement)
-            for character in ImageService._load_reference_character_meta(comic_style):
+            for character in ImageService.get_reference_character_profiles(comic_style):
                 replacement = character.get("display_name") or character.get("reference_name")
                 if not replacement:
                     continue
@@ -135,7 +209,8 @@ class ImageService:
     def _select_relevant_reference_images(
         page_data: Dict[str, Any],
         style_references: List[Tuple[str, str]],
-        comic_style: str
+        comic_style: str,
+        fallback_to_all: bool = True
     ) -> List[Tuple[str, str]]:
         """Prefer only the local character references named in this page."""
         if not style_references:
@@ -144,7 +219,7 @@ class ImageService:
         panel_text = json.dumps(page_data, ensure_ascii=False)
         panel_text_lower = panel_text.lower()
         selected_names = {name for name, _ in style_references if name in panel_text}
-        for character in ImageService._load_reference_character_meta(comic_style):
+        for character in ImageService.get_reference_character_profiles(comic_style):
             reference_name = character.get("reference_name")
             display_name = character.get("display_name")
             aliases = [alias for alias in character.get("aliases", []) if isinstance(alias, str)]
@@ -154,7 +229,7 @@ class ImageService:
                 selected_names.add(reference_name)
 
         selected = [(name, path) for name, path in style_references if name in selected_names]
-        return selected or style_references
+        return selected or (style_references if fallback_to_all else [])
 
     @staticmethod
     def get_style_reference_images(comic_style: str) -> List[Tuple[str, str]]:
@@ -185,9 +260,8 @@ class ImageService:
                 filename = os.path.basename(image_path)
                 character_name = os.path.splitext(filename)[0]
                 reference_images.append((character_name, image_path))
-                logger.info(f"Found reference image for '{character_name}': {image_path}")
 
-        return reference_images
+        return sorted(reference_images, key=lambda item: item[0])
 
     @staticmethod
     def generate_comic_image(
@@ -196,6 +270,13 @@ class ImageService:
         reference_img: Optional[Union[str, List[str]]] = None,
         extra_body: Optional[List] = None,
         google_api_key: str = None,
+        openai_api_key: str = None,
+        openai_base_url: str = "https://api.openai.com/v1",
+        image_provider: str = "google",
+        image_model: str = "gemini-3.1-flash-image-preview",
+        image_size: str = "1024x1536",
+        image_quality: str = "medium",
+        reasoning_effort: str = "medium",
         rows_per_page: Optional[int] = None,
         language: str = 'en'
     ) -> tuple[Optional[str], str]:
@@ -208,6 +289,13 @@ class ImageService:
             reference_img: Optional reference image(s)
             extra_body: Optional extra body parameters (previous pages)
             google_api_key: Google API key for image generation
+            openai_api_key: OpenAI API key for GPT Image generation
+            openai_base_url: OpenAI-compatible API base URL
+            image_provider: Image provider, "google", "openai", or "codex"
+            image_model: Image model name for the selected provider
+            image_size: OpenAI image output size
+            image_quality: OpenAI image output quality
+            reasoning_effort: Codex reasoning effort for image orchestration
             rows_per_page: Optional number of rows to strictly limit (1-5)
             language: Language of the comic content
 
@@ -224,8 +312,14 @@ class ImageService:
 
         # Get style-specific character reference images
         style_references = ImageService.get_style_reference_images(comic_style)
-        if comic_style == "disney":
-            style_references = ImageService._select_relevant_reference_images(page_data, style_references, comic_style)
+        style_references = ImageService._select_relevant_reference_images(
+            page_data,
+            style_references,
+            comic_style,
+            fallback_to_all=image_provider != "codex"
+        )
+        if image_provider == "codex" and not style_references:
+            logger.info("No page-matched style references found for Codex; skipping bundled style references")
         character_info = []
         style_ref_paths = []
 
@@ -265,14 +359,30 @@ class ImageService:
                     extra_references.append(prev_page['imageUrl'])
                 elif isinstance(prev_page, str):
                     extra_references.append(prev_page)
+        if image_provider == "codex" and extra_references:
+            max_previous_refs = ImageService._codex_max_previous_page_references()
+            if len(extra_references) > max_previous_refs:
+                logger.info(
+                    "Codex reference budget: keeping last %s of %s previous-page references",
+                    max_previous_refs,
+                    len(extra_references)
+                )
+                extra_references = extra_references[-max_previous_refs:] if max_previous_refs else []
         reference_images.extend(extra_references)
 
         # Use reference_images if we have any, otherwise None
         final_reference = reference_images if reference_images else None
         
-        image_url = ImageService._generate_with_disney_fallbacks(
+        image_url = ImageService._generate_with_reference_fallbacks(
             prompt=prompt,
             google_api_key=google_api_key,
+            openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
+            image_provider=image_provider,
+            image_model=image_model,
+            image_size=image_size,
+            image_quality=image_quality,
+            reasoning_effort=reasoning_effort,
             comic_style=comic_style,
             has_character_refs=bool(style_ref_paths),
             reference_sets=[
@@ -287,9 +397,16 @@ class ImageService:
         return image_url, prompt
 
     @staticmethod
-    def _generate_with_disney_fallbacks(
+    def _generate_with_reference_fallbacks(
         prompt: str,
         google_api_key: str,
+        openai_api_key: str,
+        openai_base_url: str,
+        image_provider: str,
+        image_model: str,
+        image_size: str,
+        image_quality: str,
+        reasoning_effort: str,
         comic_style: str,
         has_character_refs: bool,
         reference_sets: List[Optional[List[Any]]]
@@ -307,6 +424,25 @@ class ImageService:
             tried.add(key)
 
             try:
+                if image_provider == "codex":
+                    return generate_codex_image_core(
+                        prompt=prompt,
+                        reference_img=refs,
+                        model=image_model,
+                        size=image_size,
+                        quality=image_quality,
+                        reasoning_effort=reasoning_effort
+                    )
+                if image_provider == "openai":
+                    return generate_openai_image_core(
+                        prompt=prompt,
+                        reference_img=refs,
+                        api_key=openai_api_key,
+                        base_url=openai_base_url,
+                        model=image_model,
+                        size=image_size,
+                        quality=image_quality
+                    )
                 return generate_social_media_image_core(
                     prompt=prompt,
                     reference_img=refs,
@@ -329,6 +465,13 @@ class ImageService:
     def generate_comic_cover(
         comic_style: str = 'doraemon',
         google_api_key: str = None,
+        openai_api_key: str = None,
+        openai_base_url: str = "https://api.openai.com/v1",
+        image_provider: str = "google",
+        image_model: str = "gemini-3.1-flash-image-preview",
+        image_size: str = "1024x1536",
+        image_quality: str = "medium",
+        reasoning_effort: str = "medium",
         reference_imgs: List[Union[str, Dict]] = None,
         language: str = 'en',
         custom_requirements: str = ''
@@ -339,6 +482,13 @@ class ImageService:
         Args:
             comic_style: Style of the comic
             google_api_key: Google API key
+            openai_api_key: OpenAI API key
+            openai_base_url: OpenAI-compatible API base URL
+            image_provider: Image provider, "google", "openai", or "codex"
+            image_model: Image model name for the selected provider
+            image_size: OpenAI image output size
+            image_quality: OpenAI image output quality
+            reasoning_effort: Codex reasoning effort for cover orchestration
             reference_imgs: List of reference image URLs
             language: Language of the comic
             custom_requirements: User's custom cover requirements (optional)
@@ -369,18 +519,49 @@ class ImageService:
         processed_refs.extend(style_ref_paths)
 
         # Add story page reference images (extract URLs from objects if needed)
+        story_page_refs = []
         if reference_imgs:
             for img in reference_imgs:
                 if isinstance(img, dict) and 'imageUrl' in img:
-                    processed_refs.append(img['imageUrl'])
+                    story_page_refs.append(img['imageUrl'])
                 elif isinstance(img, str):
-                    processed_refs.append(img)
+                    story_page_refs.append(img)
+        if image_provider == "codex" and story_page_refs:
+            max_cover_refs = ImageService._codex_max_cover_page_references()
+            if len(story_page_refs) > max_cover_refs:
+                logger.info(
+                    "Codex cover reference budget: keeping last %s of %s story-page references",
+                    max_cover_refs,
+                    len(story_page_refs)
+                )
+                story_page_refs = story_page_refs[-max_cover_refs:] if max_cover_refs else []
+        processed_refs.extend(story_page_refs)
 
-        image_url = generate_social_media_image_core(
-            prompt=prompt,
-            reference_img=processed_refs,
-            google_api_key=google_api_key
-        )
+        if image_provider == "codex":
+            image_url = generate_codex_image_core(
+                prompt=prompt,
+                reference_img=processed_refs,
+                model=image_model,
+                size=image_size,
+                quality=image_quality,
+                reasoning_effort=reasoning_effort
+            )
+        elif image_provider == "openai":
+            image_url = generate_openai_image_core(
+                prompt=prompt,
+                reference_img=processed_refs,
+                api_key=openai_api_key,
+                base_url=openai_base_url,
+                model=image_model,
+                size=image_size,
+                quality=image_quality
+            )
+        else:
+            image_url = generate_social_media_image_core(
+                prompt=prompt,
+                reference_img=processed_refs,
+                google_api_key=google_api_key
+            )
 
         return image_url, prompt
     

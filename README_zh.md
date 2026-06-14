@@ -103,7 +103,7 @@ comic_alpha/
 ### 后端
 - **Python 3.8+**
 - **Flask**: Web 框架
-- **OpenAI API**: AI 生成能力
+- **Codex OAuth、OpenAI、Google Gemini**: 文本和图片生成来源
 - **Flask-CORS**: 跨域支持
 
 ### 前端
@@ -175,16 +175,16 @@ python -m http.server 8000
 ### 配置 API
 
 1. 点击右上角的 **⚙️ 配置** 按钮
-2. **Google API Key (必填)**：输入您的 Google API Key。这是核心脚本生成和智能功能所必需的。
-3. **高级配置 (可选)**：点击展开以配置 OpenAI 相关设置：
-   - 输入 OpenAI API Key
-   - 输入 OpenAI API 的 Base URL（默认：`https://api.openai.com/v1`）
-   - 选择 OpenAI 模型（如 `gpt-4o-mini`）
+2. 选择 **模型来源**：
+   - **Codex（免 Key）** 使用本机 Codex 登录，仅允许 localhost 调用，浏览器不会保存 token。
+   - **Google Gemini** 需要 Google API Key。
+   - **OpenAI / 兼容接口** 需要 API Key，也可填写自定义 Base URL。
+3. 在 **模型细节** 中配置文本模型、图片来源、图片模型、尺寸、质量和 reasoning effort。
 4. 点击 **💾 保存配置**
 
 ### 生成漫画
 
-1. 确保已配置 API（特别是 **Google API Key**）
+1. 确保已配置所选模型来源
 2. 在文本框中描述你想要的漫画内容（支持直接粘贴图片作为创作参考）
 3. 设置生成页数（1-10页）
 4. 点击 **AI 生成多页分镜**
@@ -218,6 +218,8 @@ python -m http.server 8000
 ### 1. 角色与道具一致性 (Character Consistency)
 - **原理**：系统支持通过 **粘贴图片** (在输入框直接 Ctrl+V) 或使用 **前面已生成的页面** 作为基准传递给 AI。
 - **作用**：AI 会提取参考图中的角色容貌、发型、服装以及特定道具的特征，确保在整个漫画系列中角色形象保持高度一致，不会出现中途“变脸”或“换装”的情况。
+- **本地风格参考图**：`assets/refer_image/<style>/` 下的图片会按文件名匹配角色。可选的 `characters.json` 可以把“三太子”等用户别名映射到 `哪吒.jpg`。
+- **Codex 性能预算**：Codex 生图只发送当前页命中的参考角色，会限制历史页参考图数量，并在上传前缩小参考图。可通过 `CODEX_MAX_PREVIOUS_PAGE_REFERENCES`、`CODEX_MAX_COVER_PAGE_REFERENCES`、`CODEX_REFERENCE_MAX_SIDE` 调整。
 
 ### 2. 布局草图参考 (Layout Reference)
 - **原理**：系统左侧显示的实时草图（由 JSON 脚本渲染的分镜界面）会被作为布局参考提供给 AI。
@@ -226,6 +228,10 @@ python -m http.server 8000
 ### 3. 封面一致性 (Cover Consistency)
 - **原理**：生成封面时，系统会将已生成的故事页面作为参考。
 - **作用**：确保封面上的主角形象、核心场景与正文内容完美匹配，提升作品的专业感。
+
+### 4. 快速草稿 (Faster Drafts)
+- 快速迭代时建议把图片质量设为 `low`、尺寸设为 `1024x1024`、reasoning effort 设为 `low`。
+- Codex 生图适合本地免 Key 使用，但图像工具本身可能比直连 provider API 慢；对延迟敏感时建议直接使用 OpenAI Image API 或 Gemini。
 
 ## API 文档
 
@@ -305,8 +311,15 @@ POST /api/generate-image
     "title": "页面标题",
     "rows": [...]
   },
+  "image_provider": "codex",
+  "image_model": "gpt-image-2",
+  "image_size": "1024x1536",
+  "image_quality": "medium",
+  "reasoning_effort": "medium",
   "reference_img": "data:image/png;base64,...",
-  "extra_body": {}
+  "extra_body": [
+    { "imageUrl": "/backend/static/images/previous-page.png" }
+  ]
 }
 ```
 
@@ -314,6 +327,8 @@ POST /api/generate-image
 - `reference_img` 会自动传入当前草图的base64数据
 - 生成的图片会参考草图的布局和构图
 - 支持base64格式和URL格式
+- `image_provider` 支持 `codex`、`google`、`openai`
+- Codex 凭证仅允许 localhost 调用，因为它使用本机 Codex 登录态
 
 响应：
 ```json

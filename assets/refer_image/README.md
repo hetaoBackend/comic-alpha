@@ -27,6 +27,7 @@ refer_image/
    - Load all reference images from the style folder
    - Extract character names from filenames
    - Pass the images to the AI model with instructions to match the character appearances
+   - Optionally read `characters.json` to map user aliases to those filename-based reference names
 
 ## Example
 
@@ -46,4 +47,5 @@ When generating a Doraemon-style comic, the AI will use these images as referenc
 - Use high-quality, clear images for best results
 - Images should show the character clearly (preferably front-facing or 3/4 view)
 - The filename (without extension) becomes the character name in the prompt
+- `characters.json` is optional. Use it when users may type aliases like "三太子" for `哪吒.jpg`; every `reference_name` must match an existing image filename
 - Multiple characters can be added to each style folder

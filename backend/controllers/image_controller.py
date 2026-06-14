@@ -1,9 +1,12 @@
 """Image controller - handles image generation and proxy endpoints"""
 from flask import Blueprint, request, jsonify, Response
+import logging
 import os
+from controllers.auth_utils import is_loopback_request, validate_reasoning_effort
 from services.image_service import ImageService
 
 image_bp = Blueprint('image', __name__)
+logger = logging.getLogger(__name__)
 
 
 @image_bp.route('/api/generate-image', methods=['POST'])
@@ -16,7 +19,9 @@ def generate_comic_image():
         "page_data": {...},  # comic page data
         "reference_img": "url" or ["url1", "url2"],  # optional reference image(s)
         "comic_style": "doraemon",  # optional comic style
-        "google_api_key": "your-google-api-key"  # required Google API key
+        "image_provider": "google", "openai", or "codex",
+        "google_api_key": "your-google-api-key",
+        "api_key": "your-openai-api-key"
     }
     """
     try:
@@ -29,9 +34,21 @@ def generate_comic_image():
         if not page_data:
             return jsonify({"error": "Page data is required"}), 400
         
+        image_provider = data.get('image_provider', 'google')
+        if image_provider not in ['google', 'openai', 'codex']:
+            return jsonify({"error": "Image provider must be 'google', 'openai', or 'codex'"}), 400
+
         google_api_key = data.get('google_api_key')
-        if not google_api_key:
+        openai_api_key = data.get('api_key')
+        if image_provider == 'google' and not google_api_key:
             return jsonify({"error": "Google API key is required"}), 400
+        if image_provider == 'openai' and not openai_api_key:
+            return jsonify({"error": "OpenAI API key is required"}), 400
+        if image_provider == 'codex' and not is_loopback_request():
+            return jsonify({"error": "Codex credentials can only be used from localhost"}), 403
+        reasoning_effort, reasoning_error, reasoning_status = validate_reasoning_effort(data.get('reasoning_effort'))
+        if reasoning_error:
+            return jsonify({"error": reasoning_error}), reasoning_status
         
         # Optional parameters
         comic_style = data.get('comic_style', 'doraemon')
@@ -39,10 +56,24 @@ def generate_comic_image():
         extra_body = data.get('extra_body')
         rows_per_page = data.get('rows_per_page')
         language = data.get('language', 'en')
+        openai_base_url = data.get('base_url', 'https://api.openai.com/v1')
+        default_image_model = 'gemini-3.1-flash-image-preview' if image_provider == 'google' else 'gpt-image-2'
+        image_model = data.get('image_model', default_image_model)
+        image_size = data.get('image_size', '1024x1536')
+        image_quality = data.get('image_quality', 'medium')
 
-        print(f"extra_body: {extra_body}")
-        print(f"rows_per_page: {rows_per_page}")
-        print(f"language: {language}")
+        logger.info(
+            "Generating comic image provider=%s model=%s quality=%s size=%s reasoning=%s rows=%s language=%s previous_refs=%s has_layout_ref=%s",
+            image_provider,
+            image_model,
+            image_quality,
+            image_size,
+            reasoning_effort,
+            rows_per_page,
+            language,
+            len(extra_body) if isinstance(extra_body, list) else 0,
+            bool(reference_img),
+        )
 
         # Generate image using service
         image_url, prompt = ImageService.generate_comic_image(
@@ -51,6 +82,13 @@ def generate_comic_image():
             reference_img=reference_img,
             extra_body=extra_body,
             google_api_key=google_api_key,
+            openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
+            image_provider=image_provider,
+            image_model=image_model,
+            image_size=image_size,
+            image_quality=image_quality,
+            reasoning_effort=reasoning_effort,
             rows_per_page=rows_per_page,
             language=language
         )
@@ -76,36 +114,66 @@ def generate_comic_cover_endpoint():
     Expected JSON body:
     {
         "comic_style": "doraemon",
+        "image_provider": "google", "openai", or "codex",
         "google_api_key": "your-google-api-key",
+        "api_key": "your-openai-api-key",
         "reference_imgs": [...]  # optional reference images
     }
     """
     try:
         data = request.get_json()
-        print(f"[Cover Generation] Received data: {data}")
-        
         if not data:
             return jsonify({"error": "No JSON data provided"}), 400
             
+        image_provider = data.get('image_provider', 'google')
+        if image_provider not in ['google', 'openai', 'codex']:
+            return jsonify({"error": "Image provider must be 'google', 'openai', or 'codex'"}), 400
+
         google_api_key = data.get('google_api_key')
-        if not google_api_key:
+        openai_api_key = data.get('api_key')
+        if image_provider == 'google' and not google_api_key:
             return jsonify({"error": "Google API key is required"}), 400
+        if image_provider == 'openai' and not openai_api_key:
+            return jsonify({"error": "OpenAI API key is required"}), 400
+        if image_provider == 'codex' and not is_loopback_request():
+            return jsonify({"error": "Codex credentials can only be used from localhost"}), 403
+        reasoning_effort, reasoning_error, reasoning_status = validate_reasoning_effort(data.get('reasoning_effort'))
+        if reasoning_error:
+            return jsonify({"error": reasoning_error}), reasoning_status
 
         comic_style = data.get('comic_style', 'doraemon')
         reference_imgs = data.get('reference_imgs')
         language = data.get('language', 'en')
         custom_requirements = data.get('custom_requirements', '')
+        openai_base_url = data.get('base_url', 'https://api.openai.com/v1')
+        default_image_model = 'gemini-3.1-flash-image-preview' if image_provider == 'google' else 'gpt-image-2'
+        image_model = data.get('image_model', default_image_model)
+        image_size = data.get('image_size', '1024x1536')
+        image_quality = data.get('image_quality', 'medium')
 
-        print(f"[Cover Generation] Language: {language}")
-        print(f"[Cover Generation] Custom requirements: {custom_requirements}")
-        print(f"[Cover Generation] Reference images count: {len(reference_imgs) if reference_imgs else 0}")
-        if reference_imgs:
-            print(f"[Cover Generation] First reference: {reference_imgs[0] if len(reference_imgs) > 0 else 'None'}")
+        logger.info(
+            "Generating comic cover provider=%s model=%s quality=%s size=%s reasoning=%s language=%s reference_refs=%s custom_requirements=%s",
+            image_provider,
+            image_model,
+            image_quality,
+            image_size,
+            reasoning_effort,
+            language,
+            len(reference_imgs) if isinstance(reference_imgs, list) else 0,
+            bool(custom_requirements.strip()),
+        )
 
         # Generate cover using service
         image_url, prompt = ImageService.generate_comic_cover(
             comic_style=comic_style,
             google_api_key=google_api_key,
+            openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
+            image_provider=image_provider,
+            image_model=image_model,
+            image_size=image_size,
+            image_quality=image_quality,
+            reasoning_effort=reasoning_effort,
             reference_imgs=reference_imgs,
             language=language,
             custom_requirements=custom_requirements
