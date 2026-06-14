@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from google import genai
 from google.genai import types
+from comic_generator import generate_codex_text_core
 
 logger = logging.getLogger(__name__)
 
@@ -18,13 +19,17 @@ class SessionTitleService:
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o-mini",
         language: str = "zh",
-        google_api_key: Optional[str] = None
+        google_api_key: Optional[str] = None,
+        text_provider: str = "openai",
+        reasoning_effort: str = "medium"
     ):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.language = language
         self.google_api_key = google_api_key
+        self.text_provider = text_provider
+        self.reasoning_effort = reasoning_effort
 
     def generate_title(self, prompt: str, comic_data: Optional[dict] = None) -> str:
         """
@@ -108,8 +113,57 @@ class SessionTitleService:
         user_message = f"用户的故事描述：{prompt}{context_info}"
 
         try:
-            if self.google_api_key:
-                # Use Google Gemini API (preferred)
+            if self.text_provider == "codex":
+                logger.info("Using Codex OAuth for title generation")
+                title = generate_codex_text_core(
+                    system_prompt=system_prompt,
+                    user_prompt=user_message,
+                    model=self.model,
+                    reasoning_effort=self.reasoning_effort
+                ).strip()
+
+                title = title.strip('"').strip("'").strip('「').strip('」').strip()
+                if not title:
+                    logger.error("Title is empty after stripping quotes")
+                    raise ValueError("Generated title is empty")
+
+                logger.info(f"Title generated successfully with Codex OAuth: {title}")
+                return title
+            elif self.api_key:
+                # Use OpenAI API
+                logger.info("Using OpenAI API for title generation")
+                llm = ChatOpenAI(
+                    model=self.model,
+                    openai_api_key=self.api_key,
+                    base_url=self.base_url,
+                    temperature=0.6,
+                    max_tokens=30
+                )
+
+                response = llm.invoke([
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_message)
+                ])
+
+                # Extract title from response
+                if not response or not response.content:
+                    logger.error(f"Empty response from OpenAI API. Response: {response}")
+                    raise ValueError("OpenAI API returned empty response")
+
+                title = response.content.strip()
+
+                # Remove quotation marks if present
+                title = title.strip('"').strip("'").strip('「').strip('」').strip()
+
+                # Validate title is not empty after stripping
+                if not title:
+                    logger.error("Title is empty after stripping quotes")
+                    raise ValueError("Generated title is empty")
+
+                logger.info(f"Title generated successfully with OpenAI: {title}")
+                return title
+            elif self.google_api_key:
+                # Use Google Gemini API as fallback
                 logger.info("Using Google Gemini API for title generation")
                 logger.debug(f"System prompt length: {len(system_prompt)}")
                 logger.debug(f"User message: {user_message[:200]}...")
@@ -148,40 +202,6 @@ class SessionTitleService:
                     raise ValueError("Generated title is empty")
 
                 logger.info(f"Title generated successfully with Gemini: {title}")
-                return title
-
-            elif self.api_key:
-                # Use OpenAI API
-                logger.info("Using OpenAI API for title generation")
-                llm = ChatOpenAI(
-                    model=self.model,
-                    openai_api_key=self.api_key,
-                    base_url=self.base_url,
-                    temperature=0.6,
-                    max_tokens=30
-                )
-
-                response = llm.invoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_message)
-                ])
-
-                # Extract title from response
-                if not response or not response.content:
-                    logger.error(f"Empty response from OpenAI API. Response: {response}")
-                    raise ValueError("OpenAI API returned empty response")
-
-                title = response.content.strip()
-
-                # Remove quotation marks if present
-                title = title.strip('"').strip("'").strip('「').strip('」').strip()
-
-                # Validate title is not empty after stripping
-                if not title:
-                    logger.error("Title is empty after stripping quotes")
-                    raise ValueError("Generated title is empty")
-
-                logger.info(f"Title generated successfully with OpenAI: {title}")
                 return title
             else:
                 raise ValueError("No API key provided")

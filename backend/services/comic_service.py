@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
+from comic_generator import generate_codex_text_core
 
 
 class Panel(BaseModel):
@@ -25,15 +26,17 @@ class ComicScript(BaseModel):
     pages: List[ComicPage] = Field(description="漫画面板页面列表")
 
 class ComicService:
-    """Comic script generator using OpenAI or Google API"""
+    """Comic script generator using Codex OAuth, OpenAI, or Google API"""
     
-    def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", model: str = "gpt-4o-mini", comic_style: str = "doraemon", language: str = "zh", google_api_key: str = None):
+    def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", model: str = "gpt-4o-mini", comic_style: str = "doraemon", language: str = "zh", google_api_key: str = None, text_provider: str = "openai", reasoning_effort: str = "medium"):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.comic_style = comic_style
         self.language = language
         self.google_api_key = google_api_key
+        self.text_provider = text_provider
+        self.reasoning_effort = reasoning_effort
 
     def _reference_directive_text(self, reference_character_directives: Optional[List[Dict[str, Any]]] = None) -> str:
         if not reference_character_directives:
@@ -200,7 +203,29 @@ Alias-to-reference mappings:
 {self._reference_directive_text(reference_character_directives)}"""
 
         try:
-            if self.api_key:
+            if self.text_provider == "codex":
+                codex_system_prompt = system_prompt + """
+
+Return ONLY valid JSON with this exact top-level shape:
+{"pages":[{"title":"...","rows":[{"height":"250px","panels":[{"text":"..."}]}]}]}
+Do not wrap the JSON in markdown fences or add explanatory text."""
+                text_response = generate_codex_text_core(
+                    system_prompt=codex_system_prompt,
+                    user_prompt=prompt_for_model,
+                    model=self.model,
+                    reasoning_effort=self.reasoning_effort,
+                    json_mode=True
+                )
+                if "```json" in text_response:
+                    text_response = text_response.split("```json")[1].split("```")[0].strip()
+                elif "```" in text_response:
+                    text_response = text_response.split("```")[1].split("```")[0].strip()
+
+                data = json.loads(text_response)
+                comic_script_data = ComicScript(**data)
+                comic_data = [elem.model_dump() for elem in comic_script_data.pages]
+                return self._normalize_generated_pages(comic_data, rows_per_page)
+            elif self.api_key:
                 llm = ChatOpenAI(model=self.model, openai_api_key=self.api_key, base_url=self.base_url, temperature=0.7, max_tokens=3000)
                 structured_llm = llm.with_structured_output(ComicScript)
                 response: ComicScript = structured_llm.invoke(

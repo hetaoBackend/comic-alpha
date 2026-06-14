@@ -22,21 +22,42 @@ const i18n = {
             languageLabelShort: '语言',
 
             // Configuration panel
-            configTitle: '环境变量配置',
-            apiKeyLabel: 'OpenAI API Key',
-            apiKeyPlaceholder: '输入你的 OpenAI API Key',
+            configTitle: 'AI 模型配置',
+            modelModeLabel: '模型来源',
+            modelProviderCodex: 'Codex（免 Key）',
+            modelProviderGoogle: 'Google Gemini',
+            modelProviderOpenAI: 'OpenAI / 兼容接口',
+            modelProviderCodexHelp: '使用本机 Codex 登录，浏览器不存 token。',
+            modelProviderGoogleHelp: '填写 Google API Key，文本和图片都使用 Gemini。',
+            modelProviderOpenAIHelp: '填写 API Key；Base URL 仅在代理或兼容服务时修改。',
+            apiKeyLabel: 'OpenAI / API Key',
+            apiKeyPlaceholder: '输入 OpenAI 或兼容服务的 API Key',
             googleApiKeyLabel: 'Google API Key',
-            googleApiKeyPlaceholder: '输入你的 Google API Key (用于图片生成)',
+            googleApiKeyPlaceholder: '输入你的 Google API Key',
             baseUrlLabel: 'Base URL',
             baseUrlPlaceholder: 'https://api.openai.com/v1',
-            modelLabel: 'Model',
+            modelLabel: '文本模型',
+            reasoningEffortLabel: '推理强度',
             customModelLabel: '自定义模型名称',
             customModelPlaceholder: '输入模型名称',
-            advancedSettings: '高级配置',
-            saveConfigBtn: '💾 保存配置',
+            imageProviderLabel: '图片提供商',
+            imageProviderGoogle: 'Google Gemini',
+            imageProviderCodex: 'Codex 凭证 + GPT Image',
+            imageProviderOpenAI: 'OpenAI GPT Image',
+            imageModelLabel: '图片模型',
+            customImageModelLabel: '自定义图片模型',
+            customImageModelPlaceholder: '输入图片模型名称',
+            imageSizeLabel: '图片尺寸',
+            imageQualityLabel: '质量',
+            imageProviderHint: '通常保持和“模型来源”一致即可。',
+            advancedSettings: '模型细节（可选）',
+            saveConfigBtn: '保存',
 
             // AI generation section
-            promptPlaceholder: '描述你想要的漫画内容，例如：生成一个关于小明学习编程的故事',
+            promptPlaceholder: '描述故事，也可粘贴或上传参考图',
+            uploadReferenceImageTitle: '上传参考图',
+            referenceImageLabel: '参考图',
+            referenceImageAttached: '1 张参考图',
             pageCountLabel: '生成页数:',
             rowsPerPageLabel: '每页行数:',
             comicStyleLabel: '漫画风格:',
@@ -113,7 +134,9 @@ const i18n = {
             statusSocialMediaSuccess: '✓ 社交媒体内容生成成功！',
 
             // Alerts
-            alertNoApiKey: '请输入 OpenAI API Key',
+            alertNoApiKey: '请输入 OpenAI/Codex API Key 或 Google API Key',
+            alertNoOpenAITextApiKey: '请在配置中输入 OpenAI/API Key',
+            alertNoOpenAIImageApiKey: '请在配置中输入 OpenAI/Codex API Key',
             alertNoGoogleApiKey: '请在配置中输入 Google API Key',
             alertNoPrompt: '请描述你想要的漫画内容',
             alertConfigSaved: '✓ 配置已保存',
@@ -194,21 +217,42 @@ const i18n = {
             languageLabelShort: 'Language',
 
             // Configuration panel
-            configTitle: 'Environment Configuration',
-            apiKeyLabel: 'OpenAI API Key',
-            apiKeyPlaceholder: 'Enter your OpenAI API Key',
+            configTitle: 'AI Model Setup',
+            modelModeLabel: 'Provider',
+            modelProviderCodex: 'Codex (No Key)',
+            modelProviderGoogle: 'Google Gemini',
+            modelProviderOpenAI: 'OpenAI / Compatible',
+            modelProviderCodexHelp: 'Local Codex login. No key stored in browser.',
+            modelProviderGoogleHelp: 'Enter a Google API key to use Gemini for text and images.',
+            modelProviderOpenAIHelp: 'Enter an API key. Change Base URL only for proxies or compatible services.',
+            apiKeyLabel: 'OpenAI / API Key',
+            apiKeyPlaceholder: 'Enter an OpenAI or compatible API key',
             googleApiKeyLabel: 'Google API Key',
-            googleApiKeyPlaceholder: 'Enter your Google API Key (for image generation)',
+            googleApiKeyPlaceholder: 'Enter your Google API Key',
             baseUrlLabel: 'Base URL',
             baseUrlPlaceholder: 'https://api.openai.com/v1',
-            modelLabel: 'Model',
+            modelLabel: 'Text Model',
+            reasoningEffortLabel: 'Reasoning Effort',
             customModelLabel: 'Custom Model Name',
             customModelPlaceholder: 'Enter model name',
-            advancedSettings: 'Advanced Configuration',
-            saveConfigBtn: '💾 Save Config',
+            imageProviderLabel: 'Image Provider',
+            imageProviderGoogle: 'Google Gemini',
+            imageProviderCodex: 'Codex Credential + GPT Image',
+            imageProviderOpenAI: 'OpenAI GPT Image',
+            imageModelLabel: 'Image Model',
+            customImageModelLabel: 'Custom Image Model',
+            customImageModelPlaceholder: 'Enter image model name',
+            imageSizeLabel: 'Image Size',
+            imageQualityLabel: 'Quality',
+            imageProviderHint: 'Usually keep this matching the Provider setting above.',
+            advancedSettings: 'Model Details (Optional)',
+            saveConfigBtn: 'Save',
 
             // AI generation section
-            promptPlaceholder: 'Describe the comic you want, e.g.: Generate a story about Xiao Ming learning programming',
+            promptPlaceholder: 'Describe the story, or paste/upload a reference image',
+            uploadReferenceImageTitle: 'Upload reference image',
+            referenceImageLabel: 'Reference Image',
+            referenceImageAttached: '1 reference image',
             pageCountLabel: 'Pages:',
             rowsPerPageLabel: 'Rows per Page:',
             comicStyleLabel: 'Comic Style:',
@@ -285,7 +329,9 @@ const i18n = {
             statusSocialMediaSuccess: '✓ Twitter post generated successfully!',
 
             // Alerts
-            alertNoApiKey: 'Please enter OpenAI API Key',
+            alertNoApiKey: 'Please enter OpenAI/Codex API Key or Google API Key',
+            alertNoOpenAITextApiKey: 'Please enter an OpenAI/API key in settings',
+            alertNoOpenAIImageApiKey: 'Please enter OpenAI/Codex API Key in settings',
             alertNoGoogleApiKey: 'Please enter Google API Key in settings',
             alertNoPrompt: 'Please describe the comic you want',
             alertConfigSaved: '✓ Configuration saved',
@@ -428,6 +474,27 @@ const i18n = {
             const key = element.getAttribute('data-i18n-tooltip');
             const params = element.getAttribute('data-i18n-params');
             element.setAttribute('data-tooltip', this.t(key, params ? JSON.parse(params) : {}));
+        });
+
+        // Update native title attributes
+        document.querySelectorAll('[data-i18n-title]').forEach(element => {
+            const key = element.getAttribute('data-i18n-title');
+            const params = element.getAttribute('data-i18n-params');
+            element.setAttribute('title', this.t(key, params ? JSON.parse(params) : {}));
+        });
+
+        // Update accessible labels
+        document.querySelectorAll('[data-i18n-aria-label]').forEach(element => {
+            const key = element.getAttribute('data-i18n-aria-label');
+            const params = element.getAttribute('data-i18n-params');
+            element.setAttribute('aria-label', this.t(key, params ? JSON.parse(params) : {}));
+        });
+
+        // Update explicit placeholders
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+            const key = element.getAttribute('data-i18n-placeholder');
+            const params = element.getAttribute('data-i18n-params');
+            element.setAttribute('placeholder', this.t(key, params ? JSON.parse(params) : {}));
         });
 
         // Trigger custom event for components that need to update

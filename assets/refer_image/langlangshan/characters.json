@@ -1,0 +1,46 @@
+{
+  "characters": [
+    {
+      "aliases": ["猪妖", "小猪妖", "猪小妖", "小猪怪", "打工小妖"],
+      "reference_name": "猪妖",
+      "safe_id": "pig_monster",
+      "display_name": "猪妖",
+      "role_hint": "憨厚、努力、常常被差事推着走的小妖怪"
+    },
+    {
+      "aliases": ["蛤蟆精", "蛤蟆妖", "蛤蟆怪", "蟾蜍精"],
+      "reference_name": "蛤蟆精",
+      "safe_id": "toad_monster",
+      "display_name": "蛤蟆精",
+      "role_hint": "机灵、胆小、反应夸张的小妖怪"
+    },
+    {
+      "aliases": ["狗大王", "狗王", "大王", "山大王"],
+      "reference_name": "狗大王",
+      "safe_id": "dog_king",
+      "display_name": "狗大王",
+      "role_hint": "威风、粗声粗气、喜欢发号施令的山中大王"
+    },
+    {
+      "aliases": ["熊教头", "熊头领", "熊老师", "教头"],
+      "reference_name": "熊教头",
+      "safe_id": "bear_instructor",
+      "display_name": "熊教头",
+      "role_hint": "严厉、魁梧、负责训练小妖的教头"
+    },
+    {
+      "aliases": ["猩猩", "猩猩怪", "大猩猩", "猿怪"],
+      "reference_name": "猩猩",
+      "safe_id": "ape_monster",
+      "display_name": "猩猩",
+      "role_hint": "力气大、直爽、动作笨拙但有压迫感"
+    },
+    {
+      "aliases": ["黄鼠狼", "黄鼠狼精", "黄鼠狼妖", "黄鼬精"],
+      "reference_name": "黄鼠狼",
+      "safe_id": "weasel_monster",
+      "display_name": "黄鼠狼",
+      "role_hint": "狡黠、敏捷、喜欢钻空子的小妖怪"
+    }
+  ]
+}

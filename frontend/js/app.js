@@ -44,6 +44,7 @@ class UIController {
         this.apiKeyInput = document.getElementById('api-key');
         this.googleApiKeyInput = document.getElementById('google-api-key');
         this.promptInput = document.getElementById('prompt-input');
+        this.promptWrapper = document.querySelector('.prompt-wrapper');
         this.pageCountInput = document.getElementById('page-count');
         this.rowsPerPageSelect = document.getElementById('rows-per-page');
         this.comicStyleSelect = document.getElementById('comic-style');
@@ -51,9 +52,21 @@ class UIController {
         this.jsonInput = document.getElementById('json-input');
 
         // Config elements
+        this.modelProviderSelect = document.getElementById('model-provider-select');
+        this.modelProviderHelp = document.getElementById('model-provider-help');
+        this.googleCredentialConfig = document.getElementById('google-credential-config');
+        this.openaiCredentialConfig = document.getElementById('openai-credential-config');
+        this.textModelConfig = document.getElementById('text-model-config');
+        this.reasoningEffortConfig = document.getElementById('reasoning-effort-config');
         this.baseUrlInput = document.getElementById('base-url');
         this.modelSelect = document.getElementById('model-select');
         this.customModelInput = document.getElementById('custom-model');
+        this.reasoningEffortSelect = document.getElementById('reasoning-effort-select');
+        this.imageProviderSelect = document.getElementById('image-provider-select');
+        this.imageModelSelect = document.getElementById('image-model-select');
+        this.customImageModelInput = document.getElementById('custom-image-model');
+        this.imageSizeSelect = document.getElementById('image-size-select');
+        this.imageQualitySelect = document.getElementById('image-quality-select');
         this.configPanel = document.getElementById('config-panel');
 
         // Button elements
@@ -76,6 +89,9 @@ class UIController {
         // Reference Image elements
         this.imagePreviewContainer = document.getElementById('image-preview-container');
         this.referenceImagePreview = document.getElementById('reference-image-preview');
+        this.referenceImageInput = document.getElementById('reference-image-input');
+        this.referenceUploadBtn = document.getElementById('reference-upload-btn');
+        this.referenceImageStatus = document.getElementById('reference-image-status');
 
         console.log('UIController elements initialized:', {
             renderCurrentBtn: !!this.renderCurrentBtn,
@@ -98,6 +114,13 @@ class UIController {
             ConfigManager.saveGoogleApiKey(this.googleApiKeyInput.value);
         });
 
+        if (this.modelProviderSelect) {
+            this.modelProviderSelect.addEventListener('change', () => {
+                this.syncImageProviderToModelProvider();
+                this.updateModelConfigVisibility();
+            });
+        }
+
         // Model select change
         this.modelSelect.addEventListener('change', () => {
             const customInput = document.getElementById('custom-model-input');
@@ -107,6 +130,19 @@ class UIController {
                 customInput.style.display = 'none';
             }
         });
+
+        // Image provider/model select changes
+        if (this.imageProviderSelect) {
+            this.imageProviderSelect.addEventListener('change', () => {
+                this.updateModelConfigVisibility();
+            });
+        }
+
+        if (this.imageModelSelect) {
+            this.imageModelSelect.addEventListener('change', () => {
+                this.updateModelConfigVisibility();
+            });
+        }
 
         // Listen for language change events
         window.addEventListener('languageChanged', (e) => {
@@ -150,6 +186,17 @@ class UIController {
                 this.handleImagePaste(e);
             });
         }
+
+        if (this.referenceImageInput) {
+            this.referenceImageInput.addEventListener('change', (e) => {
+                const file = Array.from(e.target.files || []).find((selectedFile) => {
+                    return selectedFile.type && selectedFile.type.startsWith('image/');
+                });
+                this._processImageFile(file);
+            });
+        }
+
+        this.initReferenceImageDropZone();
 
         if (this.pageCountInput) {
             this.pageCountInput.addEventListener('change', () => {
@@ -199,6 +246,8 @@ class UIController {
      * @param {string} lang - New language code
      */
     onLanguageChanged(lang) {
+        this.updateModelConfigVisibility();
+
         // Update page indicator if visible
         if (this.pageManager.getPageCount() > 0) {
             const current = this.pageManager.getCurrentPageIndex() + 1;
@@ -213,15 +262,25 @@ class UIController {
     loadInitialConfig() {
         const config = ConfigManager.loadConfig();
         this.baseUrlInput.value = config.baseUrl;
+        if (this.modelProviderSelect) this.modelProviderSelect.value = config.modelProvider || 'codex';
         this.modelSelect.value = config.model;
+        if (this.reasoningEffortSelect) this.reasoningEffortSelect.value = config.reasoningEffort || 'medium';
+        if (this.imageProviderSelect) this.imageProviderSelect.value = config.imageProvider || config.modelProvider || 'codex';
+        if (this.imageModelSelect) this.imageModelSelect.value = config.imageModel || 'gpt-image-2';
+        if (this.imageSizeSelect) this.imageSizeSelect.value = config.imageSize || '1024x1536';
+        if (this.imageQualitySelect) this.imageQualitySelect.value = config.imageQuality || 'medium';
 
         if (config.customModel) {
             this.customModelInput.value = config.customModel;
+        }
+        if (config.customImageModel && this.customImageModelInput) {
+            this.customImageModelInput.value = config.customImageModel;
         }
 
         if (config.model === 'custom') {
             document.getElementById('custom-model-input').style.display = 'block';
         }
+        this.updateModelConfigVisibility();
 
         // Load saved API key
         this.apiKeyInput.value = ConfigManager.loadApiKey();
@@ -242,7 +301,8 @@ class UIController {
      * Toggle configuration panel
      */
     toggleConfig() {
-        if (this.configPanel.style.display === 'none') {
+        const isHidden = window.getComputedStyle(this.configPanel).display === 'none';
+        if (isHidden) {
             this.configPanel.style.display = 'block';
         } else {
             this.configPanel.style.display = 'none';
@@ -254,15 +314,29 @@ class UIController {
      */
     saveConfig() {
         const baseUrl = this.baseUrlInput.value.trim();
+        const modelProvider = this.modelProviderSelect ? this.modelProviderSelect.value : 'codex';
         const model = this.modelSelect.value;
         const customModel = this.customModelInput.value.trim();
+        const reasoningEffort = this.reasoningEffortSelect ? this.reasoningEffortSelect.value : 'medium';
+        const imageProvider = this.imageProviderSelect ? this.imageProviderSelect.value : modelProvider;
+        const imageModel = this.imageModelSelect ? this.imageModelSelect.value : 'gpt-image-2';
+        const customImageModel = this.customImageModelInput ? this.customImageModelInput.value.trim() : '';
+        const imageSize = this.imageSizeSelect ? this.imageSizeSelect.value : '1024x1536';
+        const imageQuality = this.imageQualitySelect ? this.imageQualitySelect.value : 'medium';
         const apiKey = this.apiKeyInput.value.trim();
         const googleApiKey = this.googleApiKeyInput.value.trim();
 
         const config = {
             baseUrl: baseUrl,
+            modelProvider: modelProvider,
             model: model,
-            customModel: customModel
+            customModel: customModel,
+            reasoningEffort: reasoningEffort,
+            imageProvider: imageProvider,
+            imageModel: imageModel,
+            customImageModel: customImageModel,
+            imageSize: imageSize,
+            imageQuality: imageQuality
         };
 
         const configSaved = ConfigManager.saveConfig(config);
@@ -283,7 +357,7 @@ class UIController {
         const advancedConfig = document.getElementById('advanced-config');
         const chevron = document.getElementById('advanced-chevron');
         if (advancedConfig.style.display === 'none') {
-            advancedConfig.style.display = 'block';
+            advancedConfig.style.display = 'flex';
             chevron.style.transform = 'rotate(90deg)';
         } else {
             advancedConfig.style.display = 'none';
@@ -292,11 +366,125 @@ class UIController {
     }
 
     /**
+     * Update image provider-specific config visibility
+     */
+    updateModelConfigVisibility() {
+        const openaiImageConfig = document.getElementById('openai-image-config');
+        const customImageModelInput = document.getElementById('custom-image-model-input');
+        const provider = this.modelProviderSelect ? this.modelProviderSelect.value : 'codex';
+        const imageProvider = this.imageProviderSelect ? this.imageProviderSelect.value : provider;
+        const imageModel = this.imageModelSelect ? this.imageModelSelect.value : 'gpt-image-2';
+        const helpKey = {
+            codex: 'modelProviderCodexHelp',
+            google: 'modelProviderGoogleHelp',
+            openai: 'modelProviderOpenAIHelp'
+        }[provider] || 'modelProviderCodexHelp';
+
+        if (this.modelProviderHelp && window.i18n) {
+            this.modelProviderHelp.innerText = window.i18n.t(helpKey);
+        }
+
+        if (this.googleCredentialConfig) {
+            this.googleCredentialConfig.style.display = provider === 'google' ? 'block' : 'none';
+        }
+
+        if (this.openaiCredentialConfig) {
+            this.openaiCredentialConfig.style.display = provider === 'openai' ? 'block' : 'none';
+        }
+
+        if (this.textModelConfig) {
+            this.textModelConfig.style.display = provider === 'google' ? 'none' : 'block';
+        }
+
+        if (this.reasoningEffortConfig) {
+            this.reasoningEffortConfig.style.display = provider === 'google' ? 'none' : 'block';
+        }
+
+        if (openaiImageConfig) {
+            openaiImageConfig.style.display = imageProvider === 'openai' || imageProvider === 'codex' ? 'block' : 'none';
+        }
+
+        if (customImageModelInput) {
+            customImageModelInput.style.display = (imageProvider === 'openai' || imageProvider === 'codex') && imageModel === 'custom' ? 'block' : 'none';
+        }
+    }
+
+    /**
+     * Keep the image provider simple by default: it follows the chosen model provider.
+     */
+    syncImageProviderToModelProvider() {
+        if (!this.modelProviderSelect || !this.imageProviderSelect) return;
+        this.imageProviderSelect.value = this.modelProviderSelect.value;
+    }
+
+    /**
+     * Validate provider-specific text generation credentials.
+     */
+    validateTextGenerationConfig(config, apiKey, googleApiKey) {
+        if (config.textProvider === 'codex') return true;
+        if (config.textProvider === 'openai') {
+            if (!apiKey) {
+                alert(window.i18n.t('alertNoOpenAITextApiKey') || 'Please enter OpenAI/API key in settings');
+                return false;
+            }
+            return true;
+        }
+        if (!googleApiKey) {
+            alert(window.i18n.t('alertNoGoogleApiKey') || 'Please enter Google API Key in settings');
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Read image generation settings and API keys from the current UI/config
+     */
+    getImageGenerationConfig() {
+        const config = ConfigManager.getCurrentConfig();
+        return {
+            imageProvider: config.imageProvider,
+            imageModel: config.imageModel,
+            imageSize: config.imageSize,
+            imageQuality: config.imageQuality,
+            reasoningEffort: config.reasoningEffort || 'medium',
+            baseUrl: config.baseUrl,
+            openaiApiKey: this.apiKeyInput.value.trim(),
+            googleApiKey: this.googleApiKeyInput.value.trim()
+        };
+    }
+
+    /**
+     * Validate provider-specific image generation credentials
+     */
+    validateImageGenerationConfig(imageConfig) {
+        if (imageConfig.imageProvider === 'openai') {
+            if (!imageConfig.openaiApiKey) {
+                alert(window.i18n.t('alertNoOpenAIImageApiKey') || 'Please enter OpenAI API Key in settings');
+                return false;
+            }
+            return true;
+        }
+
+        if (imageConfig.imageProvider === 'codex') {
+            return true;
+        }
+
+        if (!imageConfig.googleApiKey) {
+            alert(window.i18n.t('alertNoGoogleApiKey') || 'Please configure Google API Key in settings');
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Handle image paste into prompt input
      * @param {ClipboardEvent} event - Paste event
      */
     handleImagePaste(event) {
-        const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+        const clipboardData = event.clipboardData || event.originalEvent?.clipboardData;
+        if (!clipboardData?.items) return;
+
+        const items = clipboardData.items;
 
         for (const item of items) {
             if (item.type.indexOf('image') !== -1) {
@@ -309,15 +497,84 @@ class UIController {
     }
 
     /**
+     * Initialize drag and drop support for reference images.
+     */
+    initReferenceImageDropZone() {
+        if (!this.promptWrapper) return;
+
+        const showDragState = (event) => {
+            if (!this._hasDraggedImage(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.promptWrapper.classList.add('drag-over');
+        };
+
+        this.promptWrapper.addEventListener('dragenter', showDragState);
+        this.promptWrapper.addEventListener('dragover', showDragState);
+
+        this.promptWrapper.addEventListener('dragleave', (event) => {
+            if (!this.promptWrapper.contains(event.relatedTarget)) {
+                this.promptWrapper.classList.remove('drag-over');
+            }
+        });
+
+        this.promptWrapper.addEventListener('drop', (event) => {
+            if (!this._hasDraggedImage(event)) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.promptWrapper.classList.remove('drag-over');
+
+            const file = Array.from(event.dataTransfer.files || []).find((droppedFile) => {
+                return droppedFile.type && droppedFile.type.startsWith('image/');
+            });
+
+            this._processImageFile(file);
+        });
+    }
+
+    /**
+     * Check whether a drag event contains an image file.
+     * @param {DragEvent} event
+     * @returns {boolean}
+     */
+    _hasDraggedImage(event) {
+        const items = Array.from(event.dataTransfer?.items || []);
+        if (items.length > 0) {
+            return items.some((item) => item.kind === 'file' && item.type.startsWith('image/'));
+        }
+
+        return Array.from(event.dataTransfer?.files || []).some((file) => {
+            return file.type && file.type.startsWith('image/');
+        });
+    }
+
+    /**
+     * Open the reference image file picker.
+     */
+    triggerReferenceImageUpload() {
+        if (this.referenceImageInput) {
+            this.referenceImageInput.click();
+        }
+    }
+
+    /**
      * Process an image file (from paste or upload)
      * @param {File} file 
      */
     _processImageFile(file) {
         if (!file) return;
 
+        if (!file.type || !file.type.startsWith('image/')) {
+            return;
+        }
+
         // Check file size (e.g., limit to 5MB)
         if (file.size > 5 * 1024 * 1024) {
             alert(window.i18n.t('alertFileTooLarge') || 'File is too large. Please upload an image smaller than 5MB.');
+            if (this.referenceImageInput) {
+                this.referenceImageInput.value = '';
+            }
             return;
         }
 
@@ -326,18 +583,39 @@ class UIController {
             const base64Image = e.target.result;
             this.referenceImage = base64Image;
 
-            // Update UI
-            if (this.referenceImagePreview) {
-                this.referenceImagePreview.src = base64Image;
-            }
-            if (this.imagePreviewContainer) {
-                this.imagePreviewContainer.style.display = 'flex';
-            }
+            this.updateReferenceImageUI();
 
             // Save to session state
             this.saveCurrentSessionState();
+
+            if (this.referenceImageInput) {
+                this.referenceImageInput.value = '';
+            }
         };
         reader.readAsDataURL(file);
+    }
+
+    /**
+     * Keep all reference image UI surfaces in sync.
+     */
+    updateReferenceImageUI() {
+        const hasReferenceImage = !!this.referenceImage;
+
+        if (this.referenceImagePreview) {
+            this.referenceImagePreview.src = hasReferenceImage ? this.referenceImage : '';
+        }
+
+        if (this.imagePreviewContainer) {
+            this.imagePreviewContainer.style.display = hasReferenceImage ? 'flex' : 'none';
+        }
+
+        if (this.referenceImageStatus) {
+            this.referenceImageStatus.style.display = hasReferenceImage ? 'inline-flex' : 'none';
+        }
+
+        if (this.referenceUploadBtn) {
+            this.referenceUploadBtn.classList.toggle('has-reference', hasReferenceImage);
+        }
     }
 
     /**
@@ -348,12 +626,7 @@ class UIController {
         if (this.referenceImageInput) {
             this.referenceImageInput.value = '';
         }
-        if (this.imagePreviewContainer) {
-            this.imagePreviewContainer.style.display = 'none';
-        }
-        if (this.referenceImagePreview) {
-            this.referenceImagePreview.src = '';
-        }
+        this.updateReferenceImageUI();
 
         // Save to session state
         this.saveCurrentSessionState();
@@ -368,10 +641,10 @@ class UIController {
         const prompt = this.promptInput.value.trim();
         const comicStyle = this.comicStyleSelect.value;
         const language = this.comicLanguageSelect.value;
+        const config = ConfigManager.getCurrentConfig();
 
         // Validate inputs
-        if (!apiKey && !googleApiKey) {
-            alert(window.i18n.t('alertNoApiKey') || 'Please enter OpenAI API Key or Google API Key');
+        if (!this.validateTextGenerationConfig(config, apiKey, googleApiKey)) {
             return;
         }
 
@@ -385,8 +658,6 @@ class UIController {
             this.optimizeBtn.disabled = true;
             this.optimizeBtn.classList.add('loading');
 
-            const config = ConfigManager.getCurrentConfig();
-
             // Call API
             const result = await ComicAPI.optimizePrompt(
                 apiKey,
@@ -394,6 +665,8 @@ class UIController {
                 prompt,
                 config.baseUrl,
                 config.model,
+                config.textProvider,
+                config.reasoningEffort,
                 comicStyle,
                 language
             );
@@ -433,10 +706,10 @@ class UIController {
         const rowsPerPage = parseInt(this.rowsPerPageSelect.value) || 4;
         const comicStyle = this.comicStyleSelect.value;
         const language = this.comicLanguageSelect.value;
+        const config = ConfigManager.getCurrentConfig();
 
         // Validate inputs
-        if (!apiKey && !googleApiKey) {
-            alert(window.i18n.t('alertNoApiKey') || 'Please enter OpenAI API Key or Google API Key');
+        if (!this.validateTextGenerationConfig(config, apiKey, googleApiKey)) {
             return;
         }
 
@@ -449,7 +722,6 @@ class UIController {
 
         try {
             this.isGenerating = true;
-            const config = ConfigManager.getCurrentConfig();
 
             // Update UI with spinner
             this.generateBtn.disabled = true;
@@ -464,6 +736,8 @@ class UIController {
                 pageCount,
                 config.baseUrl,
                 config.model,
+                config.textProvider,
+                config.reasoningEffort,
                 comicStyle,
                 language,
                 rowsPerPage,
@@ -557,6 +831,8 @@ class UIController {
                 comicData,
                 config.baseUrl,
                 config.model,
+                config.textProvider,
+                config.reasoningEffort,
                 language
             );
 
@@ -780,10 +1056,8 @@ class UIController {
             return;
         }
 
-        // Check Google API key
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        if (!googleApiKey) {
-            alert(window.i18n.t('alertNoGoogleApiKey') || 'Please configure Google API Key in settings');
+        const imageConfig = this.getImageGenerationConfig();
+        if (!this.validateImageGenerationConfig(imageConfig)) {
             return;
         }
 
@@ -852,12 +1126,12 @@ class UIController {
             // Call API to generate image with sketch as reference
             const result = await ComicAPI.generateComicImage(
                 pageData,
-                googleApiKey,
                 sketchBase64,
                 previousPages,
                 comicStyle,
                 rowsPerPage,
-                language
+                language,
+                imageConfig
             );
 
             if (result.success && result.image_url) {
@@ -1011,10 +1285,8 @@ class UIController {
             return;
         }
 
-        // Check Google API key
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        if (!googleApiKey) {
-            alert(window.i18n.t('alertNoGoogleApiKey') || 'Please configure Google API Key in settings');
+        const imageConfig = this.getImageGenerationConfig();
+        if (!this.validateImageGenerationConfig(imageConfig)) {
             return;
         }
 
@@ -1093,12 +1365,12 @@ class UIController {
                 // Pass sketch as reference_img and previous pages as extra_body
                 const result = await ComicAPI.generateComicImage(
                     pageData,
-                    googleApiKey,
                     sketchBase64,
                     previousPages,  // Pass previous pages as extra_body parameter
                     comicStyle,
                     rowsPerPage,
-                    this.comicLanguageSelect.value
+                    this.comicLanguageSelect.value,
+                    imageConfig
                 );
 
                 if (result.success && result.image_url) {
@@ -1454,9 +1726,9 @@ class UIController {
     async generateXiaohongshuContent() {
         const apiKey = this.apiKeyInput.value.trim();
         const googleApiKey = this.googleApiKeyInput.value.trim();
+        const config = ConfigManager.getCurrentConfig();
 
-        if (!apiKey && !googleApiKey) {
-            alert(window.i18n.t('alertNoApiKey') || 'Please enter OpenAI API Key or Google API Key');
+        if (!this.validateTextGenerationConfig(config, apiKey, googleApiKey)) {
             return;
         }
 
@@ -1483,13 +1755,13 @@ class UIController {
 
             this.showStatus(window.i18n.t('statusSocialMedia'), 'info');
 
-            const config = ConfigManager.getCurrentConfig();
-
             const result = await ComicAPI.generateSocialMediaContent(
                 apiKey,
                 comicData,
                 config.baseUrl,
                 config.model,
+                config.textProvider,
+                config.reasoningEffort,
                 platform,
                 googleApiKey
             );
@@ -1779,9 +2051,8 @@ class UIController {
      * Generate comic cover with custom requirements
      */
     async generateCoverWithCustom() {
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        if (!googleApiKey) {
-            alert(window.i18n.t('alertNoGoogleApiKey') || 'Please configure Google API Key in settings');
+        const imageConfig = this.getImageGenerationConfig();
+        if (!this.validateImageGenerationConfig(imageConfig)) {
             return;
         }
 
@@ -1852,11 +2123,11 @@ class UIController {
 
             // Call API
             const result = await ComicAPI.generateCover(
-                googleApiKey,
                 comicStyle,
                 referenceImages,
                 language,
-                customRequirements
+                customRequirements,
+                imageConfig
             );
 
             if (result.success && result.image_url) {
@@ -1946,21 +2217,10 @@ class UIController {
         // Restore reference image
         if (session.referenceImage) {
             this.referenceImage = session.referenceImage;
-            if (this.referenceImagePreview) {
-                this.referenceImagePreview.src = this.referenceImage;
-            }
-            if (this.imagePreviewContainer) {
-                this.imagePreviewContainer.style.display = 'flex';
-            }
         } else {
             this.referenceImage = null;
-            if (this.referenceImagePreview) {
-                this.referenceImagePreview.src = '';
-            }
-            if (this.imagePreviewContainer) {
-                this.imagePreviewContainer.style.display = 'none';
-            }
         }
+        this.updateReferenceImageUI();
 
         // Restore comic data
         if (session.comicData && session.comicData.pages) {
@@ -2311,6 +2571,10 @@ function removeReferenceImage() {
     if (app) app.removeReferenceImage();
 }
 
+function triggerReferenceImageUpload() {
+    if (app) app.triggerReferenceImageUpload();
+}
+
 
 
 function prevPage() {
@@ -2509,4 +2773,3 @@ function optimizePrompt() {
         app.optimizePrompt();
     }
 }
-

@@ -103,7 +103,7 @@ comic_alpha/
 ### Backend
 - **Python 3.8+**
 - **Flask**: Web framework
-- **OpenAI API**: AI generation capabilities
+- **Codex OAuth, OpenAI, and Google Gemini**: Text and image generation providers
 - **Flask-CORS**: Cross-origin support
 
 ### Frontend
@@ -175,16 +175,16 @@ Then visit `http://localhost:8000`
 ### Configure API
 
 1. Click the **⚙️ Settings** button in the top right corner
-2. **Google API Key (Mandatory)**: Enter your Google API Key. This is required for core script generation and smart features.
-3. **Advanced Settings (Optional)**: Click to expand if you want to use OpenAI models:
-   - Enter your OpenAI API Key
-   - Enter the OpenAI API Base URL (default: `https://api.openai.com/v1`)
-   - Select an OpenAI model (e.g., `gpt-4o-mini`)
+2. Choose a **Model Provider**:
+   - **Codex (No Key)** uses the local Codex login on localhost. It does not store a token in the browser.
+   - **Google Gemini** requires a Google API key.
+   - **OpenAI / Compatible** requires an API key and optionally a custom Base URL.
+3. In **Model Details**, choose the text model, image provider, image model, output size, quality, and reasoning effort.
 4. Click **💾 Save Configuration**
 
 ### Generate Comics
 
-1. Ensure your API is configured (specifically the **Google API Key**)
+1. Ensure your selected model provider is configured
 2. Describe the comic content you want in the text box (supports direct image paste as a reference)
 3. Set the number of pages to generate (1-10 pages)
 4. Click **AI Generate Multi-page Panels**
@@ -218,6 +218,8 @@ The project includes a powerful reference image system to ensure consistency and
 ### 1. Character & Item Consistency
 - **Mechanism**: The system supports **pasting images** (directly via Ctrl+V in the prompt box) or using **previously generated pages** as references for the AI.
 - **Benefit**: The AI extracts details like facial features, hairstyles, clothing, and specific props, ensuring characters remain consistent throughout the entire comic series without unexpected "face changes" or outfit swaps.
+- **Local style references**: Images in `assets/refer_image/<style>/` are matched by filename. Optional `characters.json` files can map user aliases such as "三太子" to `哪吒.jpg`.
+- **Codex performance budget**: Codex image generation only sends reference images that match the current page, caps previous-page references, and downsizes references before upload. Tune with `CODEX_MAX_PREVIOUS_PAGE_REFERENCES`, `CODEX_MAX_COVER_PAGE_REFERENCES`, and `CODEX_REFERENCE_MAX_SIDE`.
 
 ### 2. Layout & Composition Reference
 - **Mechanism**: The live sketch preview (rendered from the JSON script) is used as a layout reference for the AI.
@@ -226,6 +228,10 @@ The project includes a powerful reference image system to ensure consistency and
 ### 3. Cover Consistency
 - **Mechanism**: When generating a cover, all story pages are used as references.
 - **Benefit**: This ensures the characters and art style on the cover perfectly match the content of the comic, creating a professional and cohesive look.
+
+### 4. Faster Drafts
+- For quick iterations, set image quality to `low`, size to `1024x1024`, and reasoning effort to `low`.
+- Codex image generation is convenient for local no-key usage, but its image tool can still be slower than direct provider APIs. Use OpenAI Image API or Gemini directly when latency matters.
 
 ## API Documentation
 
@@ -305,8 +311,15 @@ Request Body:
     "title": "Page Title",
     "rows": [...]
   },
+  "image_provider": "codex",
+  "image_model": "gpt-image-2",
+  "image_size": "1024x1536",
+  "image_quality": "medium",
+  "reasoning_effort": "medium",
   "reference_img": "data:image/png;base64,...",
-  "extra_body": {}
+  "extra_body": [
+    { "imageUrl": "/backend/static/images/previous-page.png" }
+  ]
 }
 ```
 
@@ -314,6 +327,8 @@ Notes:
 - `reference_img` will automatically pass the base64 data of the current sketch
 - The generated image will reference the layout and composition of the sketch
 - Supports base64 format and URL format
+- `image_provider` can be `codex`, `google`, or `openai`
+- Codex credentials are only accepted from localhost because they use the local Codex login
 
 Response:
 ```json
@@ -471,4 +486,3 @@ MIT License
 ## Contributing
 
 Issues and Pull Requests are welcome!
-

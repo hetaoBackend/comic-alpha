@@ -1,0 +1,67 @@
+{
+  "characters": [
+    {
+      "aliases": ["哪吒", "三太子", "魔丸", "小哪吒", "Nezha"],
+      "reference_name": "哪吒",
+      "safe_id": "nezha",
+      "display_name": "哪吒",
+      "role_hint": "叛逆、勇敢、爆发力强的少年主角"
+    },
+    {
+      "aliases": ["敖丙", "龙族少年", "冰龙少年", "Ao Bing"],
+      "reference_name": "敖丙",
+      "safe_id": "ao_bing",
+      "display_name": "敖丙",
+      "role_hint": "冷静克制、温和坚定的龙族少年"
+    },
+    {
+      "aliases": ["敖光", "龙王", "东海龙王", "龙族首领"],
+      "reference_name": "敖光",
+      "safe_id": "dragon_king_ao_guang",
+      "display_name": "敖光",
+      "role_hint": "威严、强势、背负龙族命运的龙王"
+    },
+    {
+      "aliases": ["敖清妍", "龙族少女", "龙女", "清妍"],
+      "reference_name": "敖清妍",
+      "safe_id": "ao_qingyan",
+      "display_name": "敖清妍",
+      "role_hint": "灵动、坚定、带有龙族气质的少女"
+    },
+    {
+      "aliases": ["李靖", "哪吒父亲", "父亲", "总兵"],
+      "reference_name": "李靖",
+      "safe_id": "li_jing",
+      "display_name": "李靖",
+      "role_hint": "严肃、负责、内心柔软的父亲"
+    },
+    {
+      "aliases": ["殷夫人", "哪吒母亲", "母亲", "娘亲"],
+      "reference_name": "殷夫人",
+      "safe_id": "madam_yin",
+      "display_name": "殷夫人",
+      "role_hint": "温柔、坚韧、保护孩子的母亲"
+    },
+    {
+      "aliases": ["太乙真人", "太乙", "师父", "胖师父"],
+      "reference_name": "太乙真人",
+      "safe_id": "taiyi_zhenren",
+      "display_name": "太乙真人",
+      "role_hint": "幽默、法力高强、有些散漫的师父"
+    },
+    {
+      "aliases": ["申公豹", "申公", "豹子师叔", "豹妖"],
+      "reference_name": "申公豹",
+      "safe_id": "shen_gongbao",
+      "display_name": "申公豹",
+      "role_hint": "阴郁、执念深、行动敏捷的反派"
+    },
+    {
+      "aliases": ["石矶娘娘", "石矶", "石妖", "石头妖王"],
+      "reference_name": "石矶娘娘",
+      "safe_id": "shiji_niangniang",
+      "display_name": "石矶娘娘",
+      "role_hint": "强势、神秘、带有压迫感的妖怪角色"
+    }
+  ]
+}

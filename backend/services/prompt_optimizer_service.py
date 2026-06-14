@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from google import genai
 from google.genai import types
+from comic_generator import generate_codex_text_core
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,9 @@ class PromptOptimizerService:
         model: str = "gpt-4o-mini",
         comic_style: str = "doraemon",
         language: str = "zh",
-        google_api_key: Optional[str] = None
+        google_api_key: Optional[str] = None,
+        text_provider: str = "openai",
+        reasoning_effort: str = "medium"
     ):
         self.api_key = api_key
         self.base_url = base_url
@@ -27,6 +30,8 @@ class PromptOptimizerService:
         self.comic_style = comic_style
         self.language = language
         self.google_api_key = google_api_key
+        self.text_provider = text_provider
+        self.reasoning_effort = reasoning_effort
     
     def optimize_prompt(self, prompt: str) -> str:
         """
@@ -47,7 +52,9 @@ class PromptOptimizerService:
             "ghibli": "宫崎骏/吉卜力风格：细腻的自然场景描绘，柔和温暖的色调，充满想象力的奇幻元素，人物表情细腻生动，富有诗意和治愈感",
             "pixar": "皮克斯动画风格：3D渲染质感，圆润可爱的角色设计，丰富的光影效果，细腻的材质表现，情感表达真挚动人",
             "shonen": "日本少年漫画风格：充满动感的线条和速度线，夸张的表情和动作，热血激昂的氛围，强烈的视觉冲击力，快节奏的分镜",
-            "tom_and_jerry": "猫和老鼠风格：经典的2D手绘动画风格，夸张的肢体动作和表情，充满活力的追逐和闹剧元素，鲜艳明快的色彩"
+            "tom_and_jerry": "猫和老鼠风格：经典的2D手绘动画风格，夸张的肢体动作和表情，充满活力的追逐和闹剧元素，鲜艳明快的色彩",
+            "nezha": "哪吒风格：中国神话动画风格，融合传统国风与现代3D渲染技术，角色设计大胆夸张，浓烈的色彩对比，充满力量感的动作场面，烟熏妆朋克风的哪吒形象",
+            "langlangshan": "浪浪山小妖怪风格：中国奇谭水墨动画风格，清新淡雅的水墨画质感，可爱呆萌的小妖怪形象，温馨治愈的氛围，富有中国传统美学韵味"
         }
         
         # Define language instructions
@@ -90,23 +97,16 @@ class PromptOptimizerService:
 - Output ONLY the optimized prompt, no explanations or meta-commentary"""
 
         try:
-            if self.google_api_key:
-                # Use Google Gemini API (preferred)
-                logger.info("Using Google Gemini API for prompt optimization")
-                client = genai.Client(api_key=self.google_api_key)
-                response = client.models.generate_content(
-                    model="gemini-3-flash-preview",
-                    contents=[system_prompt, prompt],
-                    config=types.GenerateContentConfig(
-                        temperature=0.7,
-                        thinking_config=types.ThinkingConfig(thinking_level="low")
-                    )
-                )
-                
-                optimized = response.text.strip()
-                logger.info(f"Prompt optimized successfully with Gemini: {len(optimized)} chars")
+            if self.text_provider == "codex":
+                logger.info("Using Codex OAuth for prompt optimization")
+                optimized = generate_codex_text_core(
+                    system_prompt=system_prompt,
+                    user_prompt=prompt,
+                    model=self.model,
+                    reasoning_effort=self.reasoning_effort
+                ).strip()
+                logger.info(f"Prompt optimized successfully with Codex OAuth: {len(optimized)} chars")
                 return optimized
-                
             elif self.api_key:
                 # Use OpenAI API
                 logger.info("Using OpenAI API for prompt optimization")
@@ -125,6 +125,22 @@ class PromptOptimizerService:
                 
                 optimized = response.content.strip()
                 logger.info(f"Prompt optimized successfully with OpenAI: {len(optimized)} chars")
+                return optimized
+            elif self.google_api_key:
+                # Use Google Gemini API as fallback
+                logger.info("Using Google Gemini API for prompt optimization")
+                client = genai.Client(api_key=self.google_api_key)
+                response = client.models.generate_content(
+                    model="gemini-3-flash-preview",
+                    contents=[system_prompt, prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.7,
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
+                    )
+                )
+
+                optimized = response.text.strip()
+                logger.info(f"Prompt optimized successfully with Gemini: {len(optimized)} chars")
                 return optimized
             else:
                 raise ValueError("No API key provided")

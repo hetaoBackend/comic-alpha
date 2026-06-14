@@ -4,16 +4,19 @@ from typing import List, Dict, Any
 from openai import OpenAI
 from google import genai
 from google.genai import types
+from comic_generator import generate_codex_text_core
 
 
 class SocialMediaService:
-    """Social media content generator for Xiaohongshu and Twitter using OpenAI or Google"""
+    """Social media content generator using Codex OAuth, OpenAI, or Google"""
     
-    def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", model: str = "gpt-4o-mini", google_api_key: str = None):
+    def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", model: str = "gpt-4o-mini", google_api_key: str = None, text_provider: str = "openai", reasoning_effort: str = "medium"):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.google_api_key = google_api_key
+        self.text_provider = text_provider
+        self.reasoning_effort = reasoning_effort
         if api_key:
             self.client = OpenAI(api_key=api_key, base_url=base_url)
         else:
@@ -101,7 +104,15 @@ Create a viral tweet that captures the FEELING and makes people say "this is so 
 
 写出让人"太懂了！"的文案，要有你的态度和感悟！"""
 
-        if self.client:
+        if self.text_provider == "codex":
+            generated_text = generate_codex_text_core(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=self.model,
+                reasoning_effort=self.reasoning_effort,
+                json_mode=True
+            )
+        elif self.client:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[

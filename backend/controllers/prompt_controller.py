@@ -1,6 +1,7 @@
 """Prompt optimization controller - handles prompt optimization endpoints"""
 from flask import Blueprint, request, jsonify
 import json
+from controllers.auth_utils import infer_text_provider, validate_model_provider, validate_reasoning_effort
 from services.prompt_optimizer_service import PromptOptimizerService
 
 prompt_bp = Blueprint('prompt', __name__)
@@ -31,10 +32,15 @@ def optimize_prompt():
         
         api_key = data.get('api_key')
         google_api_key = data.get('google_api_key')
+        text_provider = infer_text_provider(data)
         prompt = data.get('prompt')
-        
-        if not api_key and not google_api_key:
-            return jsonify({"error": "Either OpenAI API key or Google API key is required"}), 400
+
+        provider_error, status_code = validate_model_provider(text_provider, api_key, google_api_key)
+        if provider_error:
+            return jsonify({"error": provider_error}), status_code
+        reasoning_effort, reasoning_error, reasoning_status = validate_reasoning_effort(data.get('reasoning_effort'))
+        if reasoning_error:
+            return jsonify({"error": reasoning_error}), reasoning_status
         
         if not prompt:
             return jsonify({"error": "Prompt is required"}), 400
@@ -55,7 +61,9 @@ def optimize_prompt():
             model=model,
             comic_style=comic_style,
             language=language,
-            google_api_key=google_api_key
+            google_api_key=google_api_key,
+            text_provider=text_provider,
+            reasoning_effort=reasoning_effort
         )
         
         optimized_prompt = service.optimize_prompt(prompt)

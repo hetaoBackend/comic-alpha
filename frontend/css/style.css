@@ -613,34 +613,68 @@ input::placeholder {
 .config-panel {
     display: none;
     background: var(--config-bg);
-    padding: 18px;
-    border-radius: 14px;
-    margin-bottom: 16px;
+    padding: 14px;
+    border-radius: 12px;
+    margin-bottom: 12px;
     border: 1px solid var(--config-border);
 }
 
 .config-panel h4 {
     margin-top: 0;
-    margin-bottom: 14px;
-    font-size: 15px;
+    margin-bottom: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
     letter-spacing: -0.3px;
 }
 
+.config-panel .flex-col {
+    gap: 10px;
+}
+
 .config-panel label {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-secondary);
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 5px;
     font-weight: 500;
+}
+
+.config-panel input[type="password"],
+.config-panel input[type="text"],
+.config-panel input[type="number"],
+.config-panel select {
+    min-height: 38px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.model-mode-section,
+.credential-panel {
+    margin-bottom: 0;
+}
+
+.credential-field {
+    margin-bottom: 10px;
+}
+
+.config-helper {
+    margin-top: 6px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 /* Config Panel Inline Layout */
 .config-row-inline {
     display: flex;
-    gap: 12px;
-    margin-bottom: 4px;
+    gap: 10px;
+    margin-bottom: 0;
 }
 
 .config-item-half {
@@ -650,15 +684,17 @@ input::placeholder {
 /* Theme Toggle Button in Config Panel */
 .theme-toggle-btn {
     width: 100%;
-    padding: 10px 14px !important;
+    min-height: 38px;
+    padding: 8px 10px !important;
     background: var(--input-bg) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border-color) !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 14px;
+    justify-content: flex-start;
+    font-size: 13px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -669,20 +705,31 @@ input::placeholder {
 }
 
 .theme-toggle-btn .theme-icon {
-    font-size: 16px;
+    font-size: 15px;
 }
 
 /* Language Select in Config Panel */
 .config-panel .language-select {
     width: 100%;
-    padding: 10px 14px !important;
-    font-size: 14px !important;
-    background: var(--input-bg) !important;
+    min-height: 38px;
+    padding: 8px 28px 8px 10px !important;
+    font-size: 13px !important;
+    background-color: var(--input-bg) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border-color) !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     height: auto;
     min-width: unset;
+}
+
+.advanced-toggle {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
 }
 
 .advanced-toggle:hover {
@@ -691,6 +738,21 @@ input::placeholder {
 
 .advanced-toggle svg {
     transition: transform 0.3s ease;
+}
+
+.advanced-config-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-left: 2px solid var(--border-color);
+    padding-left: 12px;
+}
+
+.config-panel .save-config-btn {
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
 }
 
 /* General label styles */
@@ -923,11 +985,59 @@ label {
     box-shadow: none;
 }
 
+.prompt-wrapper.drag-over {
+    border-radius: 12px;
+    background: rgba(0, 122, 255, 0.06);
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.18);
+}
+
+.prompt-wrapper.drag-over textarea {
+    border-color: #007aff;
+}
+
 /* Primary input row */
 .prompt-input-row {
     display: flex;
     align-items: flex-end;
     gap: 8px;
+}
+
+.prompt-wrapper .reference-upload-btn {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    padding: 0 !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 10px !important;
+    background: var(--input-bg) !important;
+    color: var(--text-secondary) !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: none;
+}
+
+.prompt-wrapper .reference-upload-btn:hover {
+    background: var(--ai-section-bg) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+    transform: translateY(-1px);
+}
+
+.prompt-wrapper .reference-upload-btn.has-reference {
+    background: rgba(52, 199, 89, 0.1) !important;
+    border-color: rgba(52, 199, 89, 0.35) !important;
+    color: #248a3d !important;
+}
+
+[data-theme="dark"] .prompt-wrapper .reference-upload-btn.has-reference {
+    color: #32d74b !important;
+}
+
+.prompt-wrapper .reference-upload-btn svg {
+    flex-shrink: 0;
 }
 
 .prompt-wrapper textarea {
@@ -981,10 +1091,29 @@ label {
     pointer-events: auto;
 }
 
+.reference-preview-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    background: var(--input-bg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.reference-preview-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 .image-preview-wrapper {
     position: relative;
-    width: 60px;
-    height: 60px;
+    width: 48px;
+    height: 48px;
     border-radius: 10px;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -1027,6 +1156,32 @@ label {
 .remove-image-btn:hover {
     background: rgba(255, 59, 48, 0.9);
     transform: scale(1.1);
+}
+
+.reference-image-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 4px 8px;
+    border: 1px solid rgba(52, 199, 89, 0.25);
+    border-radius: 14px;
+    background: rgba(52, 199, 89, 0.1);
+    color: #248a3d;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.reference-image-status svg {
+    flex-shrink: 0;
+}
+
+[data-theme="dark"] .reference-image-status {
+    color: #32d74b;
+    border-color: rgba(50, 215, 75, 0.3);
+    background: rgba(50, 215, 75, 0.12);
 }
 
 @keyframes slideUp {
@@ -2353,4 +2508,3 @@ button.loading .spinner {
     border-radius: 1px;
     opacity: 0.6;
 }
-

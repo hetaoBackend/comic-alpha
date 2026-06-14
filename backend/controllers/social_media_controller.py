@@ -1,6 +1,7 @@
 """Social media controller - handles social media content generation endpoints"""
 from flask import Blueprint, request, jsonify
 import json
+from controllers.auth_utils import infer_text_provider, validate_model_provider, validate_reasoning_effort
 from services.social_media_service import SocialMediaService
 
 social_bp = Blueprint('social', __name__)
@@ -28,10 +29,15 @@ def generate_xiaohongshu_content():
         
         api_key = data.get('api_key')
         google_api_key = data.get('google_api_key')
+        text_provider = infer_text_provider(data)
         comic_data = data.get('comic_data')
-        
-        if not api_key and not google_api_key:
-            return jsonify({"error": "Either OpenAI API key or Google API key is required"}), 400
+
+        provider_error, status_code = validate_model_provider(text_provider, api_key, google_api_key)
+        if provider_error:
+            return jsonify({"error": provider_error}), status_code
+        reasoning_effort, reasoning_error, reasoning_status = validate_reasoning_effort(data.get('reasoning_effort'))
+        if reasoning_error:
+            return jsonify({"error": reasoning_error}), reasoning_status
         
         if not comic_data:
             return jsonify({"error": "Comic data is required"}), 400
@@ -42,7 +48,7 @@ def generate_xiaohongshu_content():
         platform = data.get('platform', 'xiaohongshu')
         
         # Generate social content using service
-        service = SocialMediaService(api_key, base_url, model, google_api_key=google_api_key)
+        service = SocialMediaService(api_key, base_url, model, google_api_key=google_api_key, text_provider=text_provider, reasoning_effort=reasoning_effort)
         result = service.generate_social_content(comic_data, platform)
         
         return jsonify({

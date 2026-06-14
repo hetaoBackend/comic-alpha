@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>comic-perfect</title>
     <link rel="icon" type="image/jpeg" href="assets/favicon.jpeg">
-    <link rel="stylesheet" href="frontend/css/style.css?v=10">
+    <link rel="stylesheet" href="frontend/css/style.css?v=12">
 </head>
 
 <body>
@@ -57,7 +57,7 @@
 
         <!-- Configuration Panel -->
         <div id="config-panel" class="config-panel">
-            <h4 data-i18n="configTitle">环境变量配置</h4>
+            <h4 data-i18n="configTitle">AI 模型配置</h4>
             <div class="flex-col">
                 <!-- Theme and Language Row -->
                 <div class="config-row-inline">
@@ -76,38 +76,54 @@
                         </select>
                     </div>
                 </div>
-                <div>
+                <div class="model-mode-section">
+                    <label data-i18n="modelModeLabel">模型来源</label>
+                    <select id="model-provider-select">
+                        <option value="codex" data-i18n="modelProviderCodex">Codex（免 Key）</option>
+                        <option value="google" data-i18n="modelProviderGoogle">Google Gemini</option>
+                        <option value="openai" data-i18n="modelProviderOpenAI">OpenAI / 兼容接口</option>
+                    </select>
+                    <div id="model-provider-help" class="config-helper" data-i18n="modelProviderCodexHelp">
+                        使用本机 Codex 登录生成文本和图片，无需额外配置。
+                    </div>
+                </div>
+
+                <div id="google-credential-config" class="credential-panel" style="display: none;">
                     <label data-i18n="googleApiKeyLabel">Google API Key</label>
                     <input type="password" id="google-api-key" data-i18n="googleApiKeyPlaceholder"
                         placeholder="输入你的 Google API Key (用于智能生成)">
                 </div>
 
-                <!-- Advanced Config Toggle -->
-                <div class="advanced-toggle" onclick="toggleAdvancedSettings()"
-                    style="cursor: pointer; display: flex; align-items: center; gap: 5px; margin: 10px 0; font-size: 0.9em; color: var(--text-secondary);">
-                    <svg id="advanced-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" style="transition: transform 0.3s;">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                    <span data-i18n="advancedSettings">高级配置</span>
-                </div>
-
-                <!-- Advanced Config Panel -->
-                <div id="advanced-config"
-                    style="display: none; border-left: 2px solid var(--border-color); padding-left: 15px; margin-bottom: 10px;">
-                    <div style="margin-bottom: 15px;">
-                        <label data-i18n="apiKeyLabel">OpenAI API Key</label>
+                <div id="openai-credential-config" class="credential-panel" style="display: none;">
+                    <div class="credential-field">
+                        <label data-i18n="apiKeyLabel">OpenAI / API Key</label>
                         <input type="password" id="api-key" data-i18n="apiKeyPlaceholder"
                             placeholder="输入你的 OpenAI API Key">
                     </div>
-                    <div style="margin-bottom: 15px;">
+                    <div>
                         <label data-i18n="baseUrlLabel">Base URL</label>
                         <input type="text" id="base-url" data-i18n="baseUrlPlaceholder"
                             placeholder="https://api.openai.com/v1">
                     </div>
-                    <div style="margin-bottom: 15px;">
-                        <label data-i18n="modelLabel">Model</label>
+                </div>
+
+                <!-- Advanced Config Toggle -->
+                <div class="advanced-toggle" onclick="toggleAdvancedSettings()">
+                    <svg id="advanced-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" style="transition: transform 0.3s;">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                    <span data-i18n="advancedSettings">模型细节（可选）</span>
+                </div>
+
+                <!-- Advanced Config Panel -->
+                <div id="advanced-config" class="advanced-config-panel" style="display: none;">
+                    <div id="text-model-config">
+                        <label data-i18n="modelLabel">Text Model</label>
                         <select id="model-select">
+                            <option value="gpt-5.5">gpt-5.5</option>
+                            <option value="gpt-5.4-mini">gpt-5.4-mini</option>
+                            <option value="gpt-5.3-codex-spark">gpt-5.3-codex-spark</option>
                             <option value="gpt-4o-mini">gpt-4o-mini</option>
                             <option value="gpt-4o">gpt-4o</option>
                             <option value="gpt-4-turbo">gpt-4-turbo</option>
@@ -119,9 +135,64 @@
                         <label data-i18n="customModelLabel">自定义模型名称</label>
                         <input type="text" id="custom-model" data-i18n="customModelPlaceholder" placeholder="输入模型名称">
                     </div>
+                    <div id="reasoning-effort-config">
+                        <label data-i18n="reasoningEffortLabel">Reasoning Effort</label>
+                        <select id="reasoning-effort-select">
+                            <option value="low">low</option>
+                            <option value="medium" selected>medium</option>
+                            <option value="high">high</option>
+                        </select>
+                    </div>
+                    <div id="image-provider-config">
+                        <label data-i18n="imageProviderLabel">Image Provider</label>
+                        <select id="image-provider-select">
+                            <option value="codex" data-i18n="imageProviderCodex">Codex Credential + GPT Image</option>
+                            <option value="google" data-i18n="imageProviderGoogle">Google Gemini</option>
+                            <option value="openai" data-i18n="imageProviderOpenAI">OpenAI GPT Image</option>
+                        </select>
+                        <div class="config-helper" data-i18n="imageProviderHint">
+                            通常保持和“模型来源”一致即可。
+                        </div>
+                    </div>
+                    <div id="openai-image-config" style="display: none;">
+                        <div style="margin-bottom: 15px;">
+                            <label data-i18n="imageModelLabel">Image Model</label>
+                            <select id="image-model-select">
+                                <option value="gpt-image-2">gpt-image-2</option>
+                                <option value="gpt-image-1.5">gpt-image-1.5</option>
+                                <option value="gpt-image-1">gpt-image-1</option>
+                                <option value="gpt-image-1-mini">gpt-image-1-mini</option>
+                                <option value="custom" data-i18n="customImageModelLabel">自定义图片模型</option>
+                            </select>
+                        </div>
+                        <div id="custom-image-model-input" style="display: none; margin-bottom: 15px;">
+                            <label data-i18n="customImageModelLabel">自定义图片模型名称</label>
+                            <input type="text" id="custom-image-model" data-i18n="customImageModelPlaceholder" placeholder="输入图片模型名称">
+                        </div>
+                        <div class="config-row-inline">
+                            <div class="config-item-half">
+                                <label data-i18n="imageSizeLabel">Image Size</label>
+                                <select id="image-size-select">
+                                    <option value="1024x1536">1024x1536</option>
+                                    <option value="1024x1024">1024x1024</option>
+                                    <option value="1536x1024">1536x1024</option>
+                                    <option value="auto">auto</option>
+                                </select>
+                            </div>
+                            <div class="config-item-half">
+                                <label data-i18n="imageQualityLabel">Quality</label>
+                                <select id="image-quality-select">
+                                    <option value="medium">medium</option>
+                                    <option value="low">low</option>
+                                    <option value="high">high</option>
+                                    <option value="auto">auto</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <button onclick="saveConfig()" class="save-config-btn" data-i18n="saveConfigBtn">💾 保存配置</button>
+                <button onclick="saveConfig()" class="save-config-btn" data-i18n="saveConfigBtn">保存</button>
             </div>
         </div>
 
@@ -273,16 +344,30 @@
     <!-- Prompt Input Section - Fixed at Bottom -->
     <div class="prompt-section-fixed">
         <div id="image-preview-container" class="image-preview-container" style="display: none;">
-            <div class="image-preview-wrapper">
-                <img id="reference-image-preview" src="" alt="Reference Preview">
-                <button onclick="removeReferenceImage()" class="remove-image-btn">&times;</button>
+            <div class="reference-preview-card">
+                <span class="reference-preview-label" data-i18n="referenceImageLabel">参考图</span>
+                <div class="image-preview-wrapper">
+                    <img id="reference-image-preview" src="" alt="Reference Preview">
+                    <button onclick="removeReferenceImage()" class="remove-image-btn">&times;</button>
+                </div>
             </div>
         </div>
         <div class="prompt-wrapper">
+            <input type="file" id="reference-image-input" accept="image/*" style="display: none;">
             <!-- Primary input row -->
             <div class="prompt-input-row">
+                <button onclick="triggerReferenceImageUpload()" class="reference-upload-btn" id="reference-upload-btn"
+                    data-i18n-title="uploadReferenceImageTitle" data-i18n-aria-label="uploadReferenceImageTitle"
+                    title="上传参考图" aria-label="上传参考图">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" stroke-width="2" />
+                        <circle cx="8.5" cy="9.5" r="1.5" fill="currentColor" />
+                        <path d="M21 15L17 11L11 17L8.5 14.5L3 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M17 4V2M17 2H15M17 2H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                    </svg>
+                </button>
                 <textarea id="prompt-input" data-i18n="promptPlaceholder"
-                    placeholder="描述你想要的漫画内容，例如：生成一个关于小明学习编程的故事"></textarea>
+                    placeholder="描述故事，也可粘贴或上传参考图"></textarea>
                 <button onclick="optimizePrompt()" class="optimize-btn" id="optimize-btn" data-i18n-title="optimizePromptTitle" title="优化提示词">
                     <!-- Magic Wand with Sparkles -->
                     <svg class="wand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -310,6 +395,13 @@
 
             <!-- Secondary actions row -->
             <div class="prompt-actions-row" id="prompt-actions-row">
+                <div id="reference-image-status" class="reference-image-status" style="display: none;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" stroke-width="2" />
+                        <path d="M21 15L17 11L11 17L8.5 14.5L3 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <span data-i18n="referenceImageAttached">1 张参考图</span>
+                </div>
                 <!-- Render Current Page Button -->
                 <button onclick="generateFinalImage()" class="render-btn" id="render-current-btn" style="display: none;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -385,15 +477,15 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- Application Modules -->
-    <script src="frontend/js/i18n.js?v=8"></script>
+    <script src="frontend/js/i18n.js?v=11"></script>
     <script src="frontend/js/theme.js?v=4"></script>
-    <script src="frontend/js/config.js?v=4"></script>
-    <script src="frontend/js/api.js?v=5"></script>
+    <script src="frontend/js/config.js?v=6"></script>
+    <script src="frontend/js/api.js?v=8"></script>
     <script src="frontend/js/renderer.js?v=4"></script>
     <script src="frontend/js/pageManager.js?v=4"></script>
     <script src="frontend/js/exporter.js?v=4"></script>
     <script src="frontend/js/sessionManager.js?v=2"></script>
-    <script src="frontend/js/app.js?v=14"></script>
+    <script src="frontend/js/app.js?v=19"></script>
 </body>
 
 </html>

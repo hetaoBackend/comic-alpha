@@ -4,8 +4,15 @@
 
 const DEFAULT_CONFIG = {
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    customModel: ''
+    modelProvider: 'codex',
+    model: 'gpt-5.5',
+    customModel: '',
+    reasoningEffort: 'medium',
+    imageProvider: 'codex',
+    imageModel: 'gpt-image-2',
+    customImageModel: '',
+    imageSize: '1024x1536',
+    imageQuality: 'medium'
 };
 
 class ConfigManager {
@@ -17,7 +24,19 @@ class ConfigManager {
         try {
             const savedConfig = localStorage.getItem('comic_ai_config');
             if (savedConfig) {
-                return { ...DEFAULT_CONFIG, ...JSON.parse(savedConfig) };
+                const parsedConfig = JSON.parse(savedConfig);
+                const config = { ...DEFAULT_CONFIG, ...parsedConfig };
+                if (!parsedConfig.modelProvider) {
+                    if (parsedConfig.imageProvider === 'openai') {
+                        config.modelProvider = 'openai';
+                    } else if (parsedConfig.imageProvider === 'google') {
+                        config.modelProvider = 'google';
+                    }
+                }
+                if (!parsedConfig.imageProvider) {
+                    config.imageProvider = config.modelProvider;
+                }
+                return config;
             }
         } catch (e) {
             console.error('Failed to load config:', e);
@@ -52,9 +71,22 @@ class ConfigManager {
             modelName = config.customModel;
         }
 
+        let imageModelName = config.imageModel;
+
+        if (config.imageModel === 'custom' && config.customImageModel) {
+            imageModelName = config.customImageModel;
+        }
+
         return {
             baseUrl: config.baseUrl,
-            model: modelName
+            modelProvider: config.modelProvider || 'codex',
+            textProvider: config.modelProvider || 'codex',
+            model: modelName,
+            reasoningEffort: config.reasoningEffort || 'medium',
+            imageProvider: config.imageProvider || config.modelProvider || 'codex',
+            imageModel: imageModelName || 'gpt-image-2',
+            imageSize: config.imageSize || '1024x1536',
+            imageQuality: config.imageQuality || 'medium'
         };
     }
 
