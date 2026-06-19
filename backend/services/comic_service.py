@@ -72,11 +72,39 @@ class ComicService:
         )
 
     def _normalize_generated_pages(self, pages: List[Dict[str, Any]], rows_per_page: int) -> List[Dict[str, Any]]:
-        if rows_per_page != 1:
-            return pages
-
         for page in pages:
             rows = page.get("rows") or []
+
+            if rows_per_page != 1:
+                if len(rows) > rows_per_page:
+                    kept_rows = rows[:rows_per_page]
+                    overflow_texts = []
+                    for row in rows[rows_per_page:]:
+                        for panel in row.get("panels", []) or []:
+                            text = panel.get("text")
+                            if isinstance(text, str) and text.strip():
+                                overflow_texts.append(text.strip())
+                    if overflow_texts and kept_rows:
+                        last_panels = kept_rows[-1].setdefault("panels", [])
+                        if not last_panels:
+                            last_panels.append({"text": "；".join(overflow_texts)})
+                        else:
+                            existing_text = last_panels[-1].get("text", "")
+                            last_panels[-1]["text"] = "；".join(
+                                text for text in [existing_text, *overflow_texts]
+                                if isinstance(text, str) and text.strip()
+                            )
+                    page["rows"] = kept_rows
+                elif rows and len(rows) < rows_per_page:
+                    last_row = rows[-1]
+                    while len(rows) < rows_per_page:
+                        rows.append({
+                            "height": last_row.get("height", "250px"),
+                            "panels": last_row.get("panels", []) or [{"text": ""}]
+                        })
+                    page["rows"] = rows
+                continue
+
             merged_texts = []
             for row in rows:
                 for panel in row.get("panels", []) or []:

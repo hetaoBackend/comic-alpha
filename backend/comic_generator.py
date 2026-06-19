@@ -80,6 +80,22 @@ def _load_reference_image_for_openai(
         return None
 
 
+def _generated_image_to_png_bytes(generated_image) -> bytes:
+    """Convert SDK/PIL generated images into PNG bytes."""
+    if getattr(generated_image, "image_bytes", None):
+        return generated_image.image_bytes
+
+    buffer = io.BytesIO()
+    try:
+        generated_image.save(buffer, format="PNG")
+    except TypeError as exc:
+        if "format" not in str(exc):
+            raise
+        buffer = io.BytesIO()
+        generated_image.save(buffer, image_format="PNG")
+    return buffer.getvalue()
+
+
 def _collect_openai_reference_images(
         reference_img: Optional[str | list],
         max_side: Optional[int] = None
@@ -576,9 +592,7 @@ def generate_social_media_image_core(
                     break
             
             if generated_image:
-                buffer = io.BytesIO()
-                generated_image.save(buffer, format="PNG")
-                return _save_generated_image(buffer.getvalue())
+                return _save_generated_image(_generated_image_to_png_bytes(generated_image))
             else:
                 raise ValueError("No image generated in response")
 

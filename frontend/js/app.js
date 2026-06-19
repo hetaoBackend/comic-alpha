@@ -8,6 +8,7 @@ class UIController {
         this.renderer = new ComicRenderer('comic-page');
         this.isGenerating = false;
         this.isViewingImage = false;
+        this.isLoadingSession = false;
         this.generatedPagesImages = {}; // Store generated images by page index for reference
 
         // Initialize reference image state
@@ -860,7 +861,7 @@ class UIController {
 
         // Skip rendering if input is empty
         if (!input || input.trim() === '') {
-            return;
+            return false;
         }
 
         try {
@@ -868,6 +869,13 @@ class UIController {
             this.errorMsg.style.display = 'none';
 
             if (this.renderer.render(data)) {
+                if (this.pageManager.getPageCount() > 0) {
+                    this.pageManager.updateCurrentPage(data);
+                    if (!this.isLoadingSession) {
+                        this.saveCurrentSessionState();
+                    }
+                }
+
                 // Don't reset generated images when rendering existing pages
                 // Only reset when loading completely new content from user input
                 // This is handled in generateWithAI() instead
@@ -896,6 +904,8 @@ class UIController {
                 if (this.pageManager.getPageCount() > 1) {
                     if (this.generateAllBtn) this.generateAllBtn.style.display = 'inline-flex';
                 }
+
+                return true;
             } else {
                 throw new Error('Render failed');
             }
@@ -903,6 +913,7 @@ class UIController {
             console.error(e);
             this.errorMsg.style.display = 'block';
             this.errorMsg.innerText = 'JSON 格式错误: ' + e.message;
+            return false;
         }
     }
 
@@ -1049,6 +1060,11 @@ class UIController {
      * Generate final comic image from current page
      */
     async generateFinalImage() {
+        if (this.jsonInput && this.jsonInput.value.trim()) {
+            const rendered = this.renderComic();
+            if (!rendered) return;
+        }
+
         const pageData = this.pageManager.getCurrentPage();
 
         if (!pageData) {
@@ -1313,6 +1329,10 @@ class UIController {
                 // Navigate to the page
                 this.pageManager.setCurrentPageIndex(i);
                 this.loadCurrentPage();
+                const rendered = this.renderComic();
+                if (!rendered) {
+                    throw new Error(`Page ${i + 1} JSON render failed`);
+                }
 
                 // Wait for rendering
                 await this._delay(300);
@@ -2185,72 +2205,72 @@ class UIController {
         const session = this.sessionManager.getCurrentSession();
         if (!session) return;
 
-        console.log('loadSessionState for session:', session.id, {
-            hasComicData: !!session.comicData,
-            hasImages: !!(session.generatedImages && Object.keys(session.generatedImages).length > 0),
-            imagesCount: session.generatedImages ? Object.keys(session.generatedImages).length : 0
-        });
+        this.isLoadingSession = true;
+        try {
+            console.log('loadSessionState for session:', session.id, {
+                hasComicData: !!session.comicData,
+                hasImages: !!(session.generatedImages && Object.keys(session.generatedImages).length > 0),
+                imagesCount: session.generatedImages ? Object.keys(session.generatedImages).length : 0
+            });
 
-        // Restore style and language
-        if (this.comicStyleSelect) {
-            this.comicStyleSelect.value = session.style || 'doraemon';
-        }
+            this.generatedPagesImages = session.generatedImages || {};
 
-        if (this.comicLanguageSelect) {
-            this.comicLanguageSelect.value = session.language || 'en';
-        }
-
-        // Restore prompt and page count
-        if (this.promptInput) {
-            this.promptInput.value = session.prompt || '';
-            this.updateGenerateButtonState(); // Update button state based on new prompt
-        }
-
-        if (this.pageCountInput) {
-            this.pageCountInput.value = session.pageCount || 3;
-        }
-
-        if (this.rowsPerPageSelect) {
-            this.rowsPerPageSelect.value = session.rowsPerPage || 4;
-        }
-
-        // Restore reference image
-        if (session.referenceImage) {
-            this.referenceImage = session.referenceImage;
-        } else {
-            this.referenceImage = null;
-        }
-        this.updateReferenceImageUI();
-
-        // Restore comic data
-        if (session.comicData && session.comicData.pages) {
-            this.pageManager.setPages(session.comicData.pages);
-            this.pageManager.setCurrentPageIndex(session.currentPageIndex || 0);
-
-            // Update JSON input
-            const currentPage = this.pageManager.getCurrentPage();
-            if (currentPage) {
-                this.jsonInput.value = JSON.stringify(currentPage, null, 2);
+            // Restore style and language
+            if (this.comicStyleSelect) {
+                this.comicStyleSelect.value = session.style || 'doraemon';
             }
 
-            // Render the page
-            this.renderComic();
-
-            // Show navigation if multiple pages
-            if (session.comicData.pageCount > 1) {
-                this.pageNav.style.display = 'flex';
-                this.generateAllBtn.style.display = 'inline-flex';
+            if (this.comicLanguageSelect) {
+                this.comicLanguageSelect.value = session.language || 'en';
             }
 
-            // Show render button
-            if (this.renderCurrentBtn) {
-                this.renderCurrentBtn.style.display = 'inline-flex';
+            // Restore prompt and page count
+            if (this.promptInput) {
+                this.promptInput.value = session.prompt || '';
+                this.updateGenerateButtonState(); // Update button state based on new prompt
             }
-        }
 
-        // Restore generated images
-        if (session.generatedImages) {
-            this.generatedPagesImages = session.generatedImages;
+            if (this.pageCountInput) {
+                this.pageCountInput.value = session.pageCount || 3;
+            }
+
+            if (this.rowsPerPageSelect) {
+                this.rowsPerPageSelect.value = session.rowsPerPage || 4;
+            }
+
+            // Restore reference image
+            if (session.referenceImage) {
+                this.referenceImage = session.referenceImage;
+            } else {
+                this.referenceImage = null;
+            }
+            this.updateReferenceImageUI();
+
+            // Restore comic data
+            if (session.comicData && session.comicData.pages) {
+                this.pageManager.setPages(session.comicData.pages);
+                this.pageManager.setCurrentPageIndex(session.currentPageIndex || 0);
+
+                // Update JSON input
+                const currentPage = this.pageManager.getCurrentPage();
+                if (currentPage) {
+                    this.jsonInput.value = JSON.stringify(currentPage, null, 2);
+                }
+
+                // Render the page without overwriting saved generated images
+                this.renderComic();
+
+                // Show navigation if multiple pages
+                if (session.comicData.pageCount > 1) {
+                    this.pageNav.style.display = 'flex';
+                    this.generateAllBtn.style.display = 'inline-flex';
+                }
+
+                // Show render button
+                if (this.renderCurrentBtn) {
+                    this.renderCurrentBtn.style.display = 'inline-flex';
+                }
+            }
 
             // Show cover button if we have generated images
             if (Object.keys(this.generatedPagesImages).length > 0) {
@@ -2259,11 +2279,13 @@ class UIController {
                     coverBtn.style.display = 'inline-flex';
                 }
             }
-        }
 
-        // Load current page (will show generated image if available)
-        if (this.pageManager.getPageCount() > 0) {
-            this.loadCurrentPage();
+            // Load current page (will show generated image if available)
+            if (this.pageManager.getPageCount() > 0) {
+                this.loadCurrentPage();
+            }
+        } finally {
+            this.isLoadingSession = false;
         }
     }
 

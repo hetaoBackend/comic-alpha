@@ -38,6 +38,53 @@ class ImageService:
         return style_descriptions.get(comic_style, comic_style)
 
     @staticmethod
+    def _coerce_rows_per_page(rows_per_page: Optional[Any]) -> Optional[int]:
+        if rows_per_page is None:
+            return None
+        try:
+            rows = int(rows_per_page)
+        except (TypeError, ValueError):
+            return None
+        if rows < 1 or rows > 5:
+            return None
+        return rows
+
+    @staticmethod
+    def _enforce_rows_per_page(page_data: Dict[str, Any], rows_per_page: Optional[int]) -> Dict[str, Any]:
+        if rows_per_page is None or 'rows' not in page_data or not isinstance(page_data['rows'], list):
+            return page_data
+
+        rows = page_data['rows']
+        if len(rows) > rows_per_page:
+            kept_rows = rows[:rows_per_page]
+            overflow_texts = []
+            for row in rows[rows_per_page:]:
+                for panel in row.get("panels", []) or []:
+                    text = panel.get("text")
+                    if isinstance(text, str) and text.strip():
+                        overflow_texts.append(text.strip())
+            if overflow_texts and kept_rows:
+                last_panels = kept_rows[-1].setdefault("panels", [])
+                if not last_panels:
+                    last_panels.append({"text": "；".join(overflow_texts)})
+                else:
+                    existing_text = last_panels[-1].get("text", "")
+                    last_panels[-1]["text"] = "；".join(
+                        text for text in [existing_text, *overflow_texts]
+                        if isinstance(text, str) and text.strip()
+                    )
+            page_data['rows'] = kept_rows
+            return page_data
+
+        if rows and len(rows) < rows_per_page:
+            last_row = copy.deepcopy(rows[-1])
+            while len(rows) < rows_per_page:
+                rows.append(copy.deepcopy(last_row))
+            page_data['rows'] = rows
+
+        return page_data
+
+    @staticmethod
     def _project_root() -> str:
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.dirname(backend_dir)
@@ -302,10 +349,9 @@ class ImageService:
         Returns:
             Tuple of (image_url, prompt)
         """
-        # Truncate page data to rows_per_page if specified
         page_data = copy.deepcopy(page_data)
-        if rows_per_page is not None and 'rows' in page_data:
-            page_data['rows'] = page_data['rows'][:rows_per_page]
+        rows_per_page = ImageService._coerce_rows_per_page(rows_per_page)
+        page_data = ImageService._enforce_rows_per_page(page_data, rows_per_page)
 
         if comic_style == "disney":
             page_data = ImageService._sanitize_reference_aliases(page_data, comic_style)
@@ -618,7 +664,13 @@ class ImageService:
 
         # Create layout description
         total_rows = len(layout_rows)
-        layout_description = f"This page has {total_rows} rows:\n" + "\n".join(layout_rows)
+        horizontal_gutters = max(0, total_rows - 1)
+        row_band_description = (
+            f"The page must have EXACTLY {total_rows} top-level horizontal row band(s), stacked vertically from top to bottom. "
+            f"Use exactly {horizontal_gutters} horizontal gutter line(s) between these row bands. "
+            "Do not add any additional horizontal dividers, strips, tiers, or background bands."
+        )
+        layout_description = f"{row_band_description}\n" + "\n".join(layout_rows)
         single_panel_page = total_rows == 1 and panel_counts == [1]
 
         language_map = {
@@ -681,7 +733,9 @@ IMPORTANT:
         if single_panel_page:
             single_panel_requirement = "\n- **SINGLE PANEL PAGE (CRITICAL)**: This page must be one full-page illustration panel only. Do NOT split it into multiple rows, multiple panels, comic strips, or repeated views."
 
-        requirements_content = """- **LAYOUT (CRITICAL)**: You MUST strictly follow the page layout specified above. If Row 1 has 1 panel, draw 1 panel in the first row. If Row 2 has 2 panels, draw 2 panels side by side in the second row. Do NOT change the number of rows or panels per row.
+        requirements_content = """- **ROW COUNT LOCK (CRITICAL)**: The final image must contain EXACTLY {total_rows} top-level horizontal row band(s), no more and no fewer. Use exactly {horizontal_gutters} horizontal gutter line(s). Do NOT invent a third row, bonus strip, title strip, caption strip, or extra scene band.
+- **PANEL COUNT LOCK (CRITICAL)**: Follow each row's panel count exactly. If Row 1 has 1 panel, draw 1 panel in the first row. If Row 2 has 2 panels, draw 2 panels side by side in the second row. Do NOT change the number of rows or panels per row.
+- **SKETCH LAYOUT LOCK (CRITICAL)**: If a layout/sketch reference image is provided, copy its row boundaries, panel boundaries, proportions, and margins exactly. Treat the sketch as the binding layout template, not as loose inspiration.
 - **ILLUSTRATION ONLY (CRITICAL)**: Draw the described scenes directly. Do NOT render the panel descriptions, visual briefs, captions, labels, titles, row names, panel names, or prompt text anywhere in the image.
 - Maintain consistency in characters and scenes.
 - The image should be colorful and vibrant.
@@ -692,7 +746,7 @@ IMPORTANT:
 - Character Consistency: Use the provided reference images as the definitive source for character appearances. Carry over the exact facial features, hair styles, and identical clothing/outfits.{single_panel_requirement}{char_ref_requirement}"""
 
         # Negative prompt (all negative constraints)
-        negative_prompt = "rendered panel descriptions, visual brief text, captions above panels, labels above images, prompt text, title text, row labels, panel labels, panel indices visible, panel numbers shown, extra rows, extra panels, split comic strip when one panel is requested, repeated views, speech bubbles unless explicitly required, cluttered dialogue, verbose dialogue, overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, casual clothing replacing a uniform, missing belt, missing badge, wrong eye color, childlike redesign, younger variant, clothing changes without script requirement, layout deviation from sketch, costume changes"
+        negative_prompt = f"rendered panel descriptions, visual brief text, captions above panels, labels above images, prompt text, title text, row labels, panel labels, panel indices visible, panel numbers shown, extra rows, extra panels, more than {total_rows} top-level rows, extra horizontal dividers, extra strips, extra tiers, title strip, caption strip, split comic strip when one panel is requested, repeated views, speech bubbles unless explicitly required, cluttered dialogue, verbose dialogue, overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, casual clothing replacing a uniform, missing belt, missing badge, wrong eye color, childlike redesign, younger variant, clothing changes without script requirement, layout deviation from sketch, costume changes"
         
         # Format the content
         formatted_prompt = prompt_content.format(
@@ -707,6 +761,8 @@ IMPORTANT:
         formatted_requirements = requirements_content.format(
             comic_style=comic_style,
             target_lang=target_lang,
+            total_rows=total_rows,
+            horizontal_gutters=horizontal_gutters,
             single_panel_requirement=single_panel_requirement,
             char_ref_requirement=char_ref_requirement
         )
