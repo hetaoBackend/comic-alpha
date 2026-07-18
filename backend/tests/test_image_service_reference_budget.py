@@ -2,6 +2,8 @@ import os
 import sys
 import unittest
 import json
+import io
+import base64
 
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -9,7 +11,12 @@ PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
 sys.path.insert(0, BACKEND_DIR)
 
 from PIL import Image  # noqa: E402
-from comic_generator import _generated_image_to_png_bytes  # noqa: E402
+import comic_generator as comic_generator_module  # noqa: E402
+from comic_generator import (  # noqa: E402
+    GeneratedImageAspectRatioError,
+    _generated_image_to_png_bytes,
+    _normalize_generated_image_size,
+)
 from services.comic_service import ComicService  # noqa: E402
 from services import image_service as image_service_module  # noqa: E402
 from services.image_service import ImageService  # noqa: E402
@@ -31,6 +38,77 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
 
         data = _generated_image_to_png_bytes(GenAIImageLike())
         self.assertEqual(b"\x89PNG\r\n\x1a\n", data[:8])
+
+    def test_generated_image_size_accepts_near_match_without_resizing(self):
+        source = io.BytesIO()
+        Image.new("RGB", (1023, 1537), "white").save(source, format="PNG")
+
+        normalized = _normalize_generated_image_size(source.getvalue(), "1024x1536")
+
+        with Image.open(io.BytesIO(normalized)) as result:
+            self.assertEqual((1023, 1537), result.size)
+
+    def test_generated_image_size_rejects_wrong_orientation(self):
+        source = io.BytesIO()
+        Image.new("RGB", (1536, 1024), "white").save(source, format="PNG")
+
+        with self.assertRaises(GeneratedImageAspectRatioError):
+            _normalize_generated_image_size(source.getvalue(), "1024x1536")
+
+    def test_codex_image_generation_retries_wrong_aspect_ratio(self):
+        def png_bytes(size):
+            buffer = io.BytesIO()
+            Image.new("RGB", size, "white").save(buffer, format="PNG")
+            return buffer.getvalue()
+
+        def sse_response(image_bytes):
+            event = {
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "image_generation_call",
+                    "result": base64.b64encode(image_bytes).decode("ascii"),
+                },
+            }
+
+            class FakeResponse:
+                status_code = 200
+                text = f"data: {json.dumps(event)}\n\ndata: [DONE]"
+
+            return FakeResponse()
+
+        responses = [
+            sse_response(png_bytes((1536, 1024))),
+            sse_response(png_bytes((1024, 1536))),
+        ]
+        request_bodies = []
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            request_bodies.append(json)
+            return responses.pop(0)
+
+        original_token = comic_generator_module._resolve_codex_access_token
+        original_post = comic_generator_module.requests.post
+        original_save = comic_generator_module._save_generated_image
+        comic_generator_module._resolve_codex_access_token = lambda: "fake-token"
+        comic_generator_module.requests.post = fake_post
+        comic_generator_module._save_generated_image = lambda image_bytes: "/backend/static/images/fake.png"
+        try:
+            result = comic_generator_module.generate_codex_image_core(
+                prompt="Create a comic page.",
+                size="1024x1536",
+                max_retries=2,
+                retry_delay=0,
+            )
+        finally:
+            comic_generator_module._resolve_codex_access_token = original_token
+            comic_generator_module.requests.post = original_post
+            comic_generator_module._save_generated_image = original_save
+
+        self.assertEqual("/backend/static/images/fake.png", result)
+        self.assertEqual(2, len(request_bodies))
+        retry_text = request_bodies[1]["input"][0]["content"][0]["text"]
+        self.assertIn("CRITICAL RETRY CORRECTION", retry_text)
+        self.assertIn("exactly 1024x1536", retry_text)
 
     def test_comic_script_normalization_caps_rows_for_all_row_counts(self):
         service = ComicService()
@@ -65,6 +143,170 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
         self.assertIn("EXACTLY 2 top-level horizontal row band(s)", combined)
         self.assertIn("Use exactly 1 horizontal gutter line(s)", combined)
         self.assertIn("Do NOT invent a third row", combined)
+
+    def test_codex_brightness_guidance_separates_reference_identity_from_exposure(self):
+        base_prompt = ImageService._convert_page_to_prompt(
+            {
+                "title": "A sunny day",
+                "rows": [{"panels": [{"text": "A character walks outside."}]}],
+            },
+            "nezha",
+            "en",
+        )
+
+        guided_prompt = ImageService._add_codex_brightness_guidance(base_prompt)
+        payload = json.loads(guided_prompt)["image_generation_data"]
+
+        self.assertIn("BRIGHTNESS / EXPOSURE LOCK", payload["requirements"])
+        self.assertIn("Their exposure", payload["requirements"])
+        self.assertIn("motivated fill light or rim light", payload["requirements"])
+        self.assertIn("underexposure", payload["negative_prompt"])
+        self.assertIn("crushed blacks", payload["negative_prompt"])
+
+    def test_codex_generation_gets_brightness_guidance_but_google_does_not(self):
+        prompts = []
+
+        def fake_generate_with_reference_fallbacks(**kwargs):
+            prompts.append(kwargs["prompt"])
+            return "/backend/static/images/fake.png"
+
+        original = ImageService._generate_with_reference_fallbacks
+        ImageService._generate_with_reference_fallbacks = staticmethod(fake_generate_with_reference_fallbacks)
+        try:
+            page_data = {
+                "title": "Page",
+                "rows": [{"panels": [{"text": "An original character waves."}]}],
+            }
+            ImageService.generate_comic_image(
+                page_data=page_data,
+                comic_style="watercolor",
+                image_provider="codex",
+            )
+            ImageService.generate_comic_image(
+                page_data=page_data,
+                comic_style="watercolor",
+                image_provider="google",
+                google_api_key="fake",
+            )
+        finally:
+            ImageService._generate_with_reference_fallbacks = original
+
+        codex_payload = json.loads(prompts[0])["image_generation_data"]
+        google_payload = json.loads(prompts[1])["image_generation_data"]
+        self.assertIn("BRIGHTNESS / EXPOSURE LOCK", codex_payload["requirements"])
+        self.assertNotIn("BRIGHTNESS / EXPOSURE LOCK", google_payload["requirements"])
+        self.assertIn("OUTPUT CANVAS LOCK", codex_payload["requirements"])
+        self.assertIn("exactly 1024x1536", codex_payload["requirements"])
+        self.assertNotIn("OUTPUT CANVAS LOCK", google_payload["requirements"])
+
+    def test_codex_brightness_guidance_supports_plain_text_cover_prompts(self):
+        guided_prompt = ImageService._add_codex_brightness_guidance(
+            "Create a vertical comic cover."
+        )
+
+        self.assertIn("Create a vertical comic cover.", guided_prompt)
+        self.assertIn("# Codex Rendering Requirements", guided_prompt)
+        self.assertIn("BRIGHTNESS / EXPOSURE LOCK", guided_prompt)
+
+    def test_codex_canvas_guidance_supports_plain_text_cover_prompts(self):
+        guided_prompt = ImageService._add_codex_canvas_guidance(
+            "Create a vertical comic cover.",
+            "1024x1536",
+        )
+
+        self.assertIn("Create a vertical comic cover.", guided_prompt)
+        self.assertIn("OUTPUT CANVAS LOCK", guided_prompt)
+        self.assertIn("portrait orientation", guided_prompt)
+
+    def test_codex_page_size_uses_previous_page_orientation(self):
+        original = ImageService._generated_page_image_dimensions
+        ImageService._generated_page_image_dimensions = staticmethod(
+            lambda image_url: (1024, 1536)
+        )
+        try:
+            locked_size = ImageService._lock_image_size_to_previous_pages(
+                "1536x1024",
+                [{"imageUrl": "/backend/static/images/previous.png"}],
+            )
+        finally:
+            ImageService._generated_page_image_dimensions = staticmethod(original)
+
+        self.assertEqual("1024x1536", locked_size)
+
+    def test_codex_page_size_keeps_matching_previous_page_orientation(self):
+        original = ImageService._generated_page_image_dimensions
+        ImageService._generated_page_image_dimensions = staticmethod(
+            lambda image_url: (1023, 1537)
+        )
+        try:
+            locked_size = ImageService._lock_image_size_to_previous_pages(
+                "1024x1536",
+                [{"imageUrl": "/backend/static/images/previous.png"}],
+            )
+        finally:
+            ImageService._generated_page_image_dimensions = staticmethod(original)
+
+        self.assertEqual("1024x1536", locked_size)
+
+    def test_codex_page_size_uses_series_majority_instead_of_one_bad_page(self):
+        sizes = {
+            "page1.png": (1024, 1536),
+            "page2.png": (1023, 1537),
+            "page3.png": (1024, 1536),
+            "page4.png": (1536, 1024),
+        }
+        original = ImageService._generated_page_image_dimensions
+        ImageService._generated_page_image_dimensions = staticmethod(
+            lambda image_url: sizes[image_url.rsplit("/", 1)[-1]]
+        )
+        try:
+            locked_size = ImageService._lock_image_size_to_previous_pages(
+                "1536x1024",
+                [
+                    {"imageUrl": f"/backend/static/images/page{i}.png"}
+                    for i in range(1, 5)
+                ],
+            )
+        finally:
+            ImageService._generated_page_image_dimensions = staticmethod(original)
+
+        self.assertEqual("1024x1536", locked_size)
+
+    def test_codex_generation_uses_series_locked_size_for_prompt_and_provider(self):
+        captured = {}
+
+        def fake_generate_with_reference_fallbacks(**kwargs):
+            captured.update(kwargs)
+            return "/backend/static/images/fake.png"
+
+        original_dimensions = ImageService._generated_page_image_dimensions
+        original_generate = ImageService._generate_with_reference_fallbacks
+        ImageService._generated_page_image_dimensions = staticmethod(
+            lambda image_url: (1024, 1536)
+        )
+        ImageService._generate_with_reference_fallbacks = staticmethod(
+            fake_generate_with_reference_fallbacks
+        )
+        try:
+            ImageService.generate_comic_image(
+                page_data={
+                    "title": "Page 7",
+                    "rows": [{"panels": [{"text": "The race ends."}]}],
+                },
+                comic_style="watercolor",
+                image_provider="codex",
+                image_size="1536x1024",
+                extra_body=[
+                    {"imageUrl": "/backend/static/images/page6.png"}
+                ],
+            )
+        finally:
+            ImageService._generated_page_image_dimensions = staticmethod(original_dimensions)
+            ImageService._generate_with_reference_fallbacks = staticmethod(original_generate)
+
+        self.assertEqual("1024x1536", captured["image_size"])
+        prompt_payload = json.loads(captured["prompt"])["image_generation_data"]
+        self.assertIn("exactly 1024x1536", prompt_payload["requirements"])
 
     def test_generate_image_enforces_rows_per_page_before_prompting(self):
         captured = {}

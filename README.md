@@ -220,6 +220,8 @@ The project includes a powerful reference image system to ensure consistency and
 - **Benefit**: The AI extracts details like facial features, hairstyles, clothing, and specific props, ensuring characters remain consistent throughout the entire comic series without unexpected "face changes" or outfit swaps.
 - **Local style references**: Images in `assets/refer_image/<style>/` are matched by filename. Optional `characters.json` files can map user aliases such as "三太子" to `哪吒.jpg`.
 - **Codex performance budget**: Codex image generation only sends reference images that match the current page, caps previous-page references, and downsizes references before upload. Tune with `CODEX_MAX_PREVIOUS_PAGE_REFERENCES`, `CODEX_MAX_COVER_PAGE_REFERENCES`, and `CODEX_REFERENCE_MAX_SIDE`.
+- **Codex brightness control**: The Codex route treats character images, layout sketches, and previous pages as identity, layout, and continuity references instead of inheriting underexposed color grades. Normal scenes default to bright high-key lighting, while explicit night scenes retain their setting with enough fill light for readability.
+- **Codex canvas validation**: Codex output is checked against the configured aspect ratio. Small pixel discrepancies are normalized to the exact requested dimensions; wrong orientations or substantial ratio mismatches are retried instead of being saved into page history.
 
 ### 2. Layout & Composition Reference
 - **Mechanism**: The live sketch preview (rendered from the JSON script) is used as a layout reference for the AI.
