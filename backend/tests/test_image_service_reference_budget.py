@@ -218,6 +218,36 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
         self.assertIn("OUTPUT CANVAS LOCK", guided_prompt)
         self.assertIn("portrait orientation", guided_prompt)
 
+    def test_codex_cover_always_uses_standard_portrait_size(self):
+        captured = {}
+
+        def fake_generate_codex_image_core(prompt, **kwargs):
+            captured["prompt"] = prompt
+            captured.update(kwargs)
+            return "/backend/static/images/fake-cover.png"
+
+        original = image_service_module.generate_codex_image_core
+        image_service_module.generate_codex_image_core = fake_generate_codex_image_core
+        try:
+            image_url, _ = ImageService.generate_comic_cover(
+                comic_style="watercolor",
+                image_provider="codex",
+                image_size="1536x1024",
+            )
+        finally:
+            image_service_module.generate_codex_image_core = original
+
+        self.assertEqual("/backend/static/images/fake-cover.png", image_url)
+        self.assertEqual("1024x1536", captured["size"])
+        self.assertIn("exactly 1024x1536", captured["prompt"])
+        self.assertIn("portrait orientation", captured["prompt"])
+
+    def test_codex_cover_replaces_auto_size_with_standard_portrait_size(self):
+        self.assertEqual(
+            "1024x1536",
+            ImageService._lock_codex_cover_image_size("auto"),
+        )
+
     def test_codex_page_size_uses_previous_page_orientation(self):
         original = ImageService._generated_page_image_dimensions
         ImageService._generated_page_image_dimensions = staticmethod(

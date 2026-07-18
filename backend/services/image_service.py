@@ -38,6 +38,7 @@ class ImageService:
         "large near-black areas, excessive chiaroscuro, heavy vignette, gloomy cinematic color grade, "
         "dark movie still, murky background, poorly lit face"
     )
+    CODEX_COVER_IMAGE_SIZE = "1024x1536"
 
     @staticmethod
     def get_safe_style_description(comic_style: str) -> str:
@@ -175,6 +176,18 @@ class ImageService:
             return json.dumps(payload, ensure_ascii=False)
         except (KeyError, TypeError, json.JSONDecodeError):
             return f"{prompt}\n\n# Codex Canvas Requirement\n{requirement}"
+
+    @staticmethod
+    def _lock_codex_cover_image_size(image_size: str) -> str:
+        """Keep Codex covers on a conventional 2:3 portrait canvas."""
+        locked_size = ImageService.CODEX_COVER_IMAGE_SIZE
+        if image_size != locked_size:
+            logger.info(
+                "Locked Codex cover image size from %s to %s",
+                image_size,
+                locked_size,
+            )
+        return locked_size
 
     @staticmethod
     def _generated_page_image_dimensions(image_url: Any) -> Optional[Tuple[int, int]]:
@@ -725,6 +738,9 @@ class ImageService:
         Returns:
             Tuple of (image_url, prompt)
         """
+        if image_provider == "codex":
+            image_size = ImageService._lock_codex_cover_image_size(image_size)
+
         # Get style-specific character reference images
         style_references = ImageService.get_style_reference_images(comic_style)
         character_info = []
