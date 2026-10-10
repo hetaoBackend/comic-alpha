@@ -319,7 +319,7 @@ def _extract_codex_text_from_sse(body: str) -> str:
 def generate_codex_text_core(
         system_prompt: str,
         user_prompt: str,
-        model: str = "gpt-5.5",
+        model: str = "gpt-6.1-sol",
         reasoning_effort: str = "medium",
         json_mode: bool = False,
         max_retries: int = 2,

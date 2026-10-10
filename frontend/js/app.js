@@ -433,6 +433,18 @@ class UIController {
             this.openaiCredentialConfig.style.display = provider === 'openai' ? 'block' : 'none';
         }
 
+        // Codex accepts its own model catalog; API-compatible providers retain legacy options.
+        for (const option of this.modelSelect.options) {
+            option.hidden = provider === 'codex'
+                && option.value !== 'custom'
+                && option.dataset.codexSupported !== 'true';
+        }
+        if (this.modelSelect.selectedOptions[0]?.hidden) {
+            this.modelSelect.value = DEFAULT_CONFIG.model;
+        }
+        document.getElementById('custom-model-input').style.display =
+            this.modelSelect.value === 'custom' ? 'block' : 'none';
+
         if (this.textModelConfig) {
             this.textModelConfig.style.display = provider === 'google' ? 'none' : 'block';
         }

@@ -5,7 +5,7 @@
 const DEFAULT_CONFIG = {
     baseUrl: 'https://api.openai.com/v1',
     modelProvider: 'codex',
-    model: 'gpt-5.5',
+    model: 'gpt-6.1-sol',
     customModel: '',
     reasoningEffort: 'medium',
     imageProvider: 'codex',
@@ -35,6 +35,14 @@ class ConfigManager {
                 }
                 if (!parsedConfig.imageProvider) {
                     config.imageProvider = config.modelProvider;
+                }
+                // Replace obsolete Codex presets while preserving custom/API models.
+                const legacyCodexModels = [
+                    'gpt-5.5', 'gpt-5.4-mini', 'gpt-5.3-codex-spark',
+                    'gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'
+                ];
+                if (config.modelProvider === 'codex' && legacyCodexModels.includes(config.model)) {
+                    config.model = DEFAULT_CONFIG.model;
                 }
                 return config;
             }

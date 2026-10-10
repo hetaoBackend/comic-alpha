@@ -297,7 +297,7 @@ class ComicAPI {
      * @param {string} language - Language
      * @returns {Promise<Object>} Title generation result
      */
-    static async generateSessionTitle(apiKey, googleApiKey, prompt, comicData = null, baseUrl = 'https://api.openai.com/v1', model = 'gpt-5.5', textProvider = 'codex', reasoningEffort = 'medium', language = 'zh') {
+    static async generateSessionTitle(apiKey, googleApiKey, prompt, comicData = null, baseUrl = 'https://api.openai.com/v1', model = 'gpt-6.1-sol', textProvider = 'codex', reasoningEffort = 'medium', language = 'zh') {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-session-title`, {
                 method: 'POST',
