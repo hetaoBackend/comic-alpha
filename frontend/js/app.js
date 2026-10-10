@@ -10,9 +10,16 @@ class UIController {
         this.isViewingImage = false;
         this.isLoadingSession = false;
         this.generatedPagesImages = {}; // Store generated images by page index for reference
+        this.comicBrainProjects = [];
+        this.comicBrainReviewTimers = new Map();
+        this.comicBrainReviewRevisions = new Map();
+        this.comicBrainReviewQueues = new Map();
 
         // Initialize reference image state
         this.referenceImage = null;
+        this.referenceImagePersistenceMaxChars = 1000000;
+        this.referenceImageIsEphemeral = false;
+        this.referenceImageEphemeralNoticeShown = false;
 
         // Initialize session manager
         this.sessionManager = new SessionManager();
@@ -35,6 +42,9 @@ class UIController {
 
         // Initialize button state
         this.updateGenerateButtonState();
+
+        // Discover storyboard packages from the embedded ComicBrain workspace.
+        this.refreshComicBrainProjects();
     }
 
     /**
@@ -51,6 +61,11 @@ class UIController {
         this.comicStyleSelect = document.getElementById('comic-style');
         this.comicLanguageSelect = document.getElementById('comic-language');
         this.jsonInput = document.getElementById('json-input');
+        this.comicBrainProjectSelect = document.getElementById('comicbrain-project-select');
+        this.comicBrainRefreshBtn = document.getElementById('comicbrain-refresh-btn');
+        this.comicBrainLoadBtn = document.getElementById('comicbrain-load-btn');
+        this.comicBrainStatus = document.getElementById('comicbrain-status');
+        this.coverCustomInput = document.getElementById('cover-custom-input');
 
         // Config elements
         this.modelProviderSelect = document.getElementById('model-provider-select');
@@ -75,6 +90,8 @@ class UIController {
         this.renderBtn = document.querySelector('button[onclick="renderComic()"]');
         this.downloadBtn = document.querySelector('.download-btn');
         this.generateAllBtn = document.getElementById('generate-all-btn');
+        this.resumeGenerationBtn = document.getElementById('resume-generation-btn');
+        this.resumeGenerationText = document.getElementById('resume-generation-text');
         this.prevBtn = document.getElementById('prev-btn');
         this.nextBtn = document.getElementById('next-btn');
         this.optimizeBtn = document.getElementById('optimize-btn');
@@ -93,6 +110,9 @@ class UIController {
         this.referenceImageInput = document.getElementById('reference-image-input');
         this.referenceUploadBtn = document.getElementById('reference-upload-btn');
         this.referenceImageStatus = document.getElementById('reference-image-status');
+        this.referenceImageStatusText = this.referenceImageStatus
+            ? this.referenceImageStatus.querySelector('span')
+            : null;
 
         console.log('UIController elements initialized:', {
             renderCurrentBtn: !!this.renderCurrentBtn,
@@ -167,12 +187,14 @@ class UIController {
         if (this.comicStyleSelect) {
             this.comicStyleSelect.addEventListener('change', () => {
                 this.saveCurrentSessionState();
+                this.scheduleComicBrainReviewSave();
             });
         }
 
         if (this.comicLanguageSelect) {
             this.comicLanguageSelect.addEventListener('change', () => {
                 this.saveCurrentSessionState();
+                this.scheduleComicBrainReviewSave();
             });
         }
 
@@ -208,6 +230,22 @@ class UIController {
         if (this.rowsPerPageSelect) {
             this.rowsPerPageSelect.addEventListener('change', () => {
                 this.saveCurrentSessionState();
+                this.scheduleComicBrainReviewSave();
+            });
+        }
+
+        if (this.coverCustomInput) {
+            this.coverCustomInput.addEventListener('input', () => {
+                this.saveCurrentSessionState();
+                this.scheduleComicBrainReviewSave();
+            });
+        }
+
+        if (this.comicBrainProjectSelect) {
+            this.comicBrainProjectSelect.addEventListener('change', () => {
+                if (this.comicBrainLoadBtn) {
+                    this.comicBrainLoadBtn.disabled = !this.comicBrainProjectSelect.value;
+                }
             });
         }
     }
@@ -248,6 +286,8 @@ class UIController {
      */
     onLanguageChanged(lang) {
         this.updateModelConfigVisibility();
+        this.syncComicBrainUIFromSession();
+        this.updateBatchGenerationButtons();
 
         // Update page indicator if visible
         if (this.pageManager.getPageCount() > 0) {
@@ -583,8 +623,13 @@ class UIController {
         reader.onload = (e) => {
             const base64Image = e.target.result;
             this.referenceImage = base64Image;
+            this.referenceImageIsEphemeral = this.isReferenceImageTooLargeForStorage(base64Image);
+            this.referenceImageEphemeralNoticeShown = false;
 
             this.updateReferenceImageUI();
+            if (this.referenceImageIsEphemeral) {
+                this.showReferenceImageSessionOnlyNotice();
+            }
 
             // Save to session state
             this.saveCurrentSessionState();
@@ -594,6 +639,42 @@ class UIController {
             }
         };
         reader.readAsDataURL(file);
+    }
+
+    /**
+     * Large data URLs can exceed localStorage's quota once serialized with the
+     * rest of a session. They remain usable in memory for the current opening.
+     */
+    isReferenceImageTooLargeForStorage(image = this.referenceImage) {
+        const maxChars = Number.isFinite(this.referenceImagePersistenceMaxChars)
+            ? this.referenceImagePersistenceMaxChars
+            : 1000000;
+        return typeof image === 'string'
+            && image.length > maxChars;
+    }
+
+    /**
+     * Return only reference images that are safe to include in localStorage.
+     */
+    getPersistableReferenceImage() {
+        return this.isReferenceImageTooLargeForStorage() ? null : this.referenceImage;
+    }
+
+    /**
+     * Show one non-blocking notice per large image selection.
+     */
+    showReferenceImageSessionOnlyNotice() {
+        if (this.referenceImageEphemeralNoticeShown) return;
+        this.referenceImageEphemeralNoticeShown = true;
+        const message = window.i18n
+            ? window.i18n.t('referenceImageSessionOnly')
+            : '较大参考图仅本次打开有效';
+        this.showStatus(message, 'info');
+        window.setTimeout(() => {
+            if (this.aiStatus && this.aiStatus.innerText === message) {
+                this.hideStatus();
+            }
+        }, 5000);
     }
 
     /**
@@ -614,6 +695,18 @@ class UIController {
             this.referenceImageStatus.style.display = hasReferenceImage ? 'inline-flex' : 'none';
         }
 
+        if (this.referenceImageStatusText) {
+            const statusKey = this.referenceImageIsEphemeral
+                ? 'referenceImageSessionOnly'
+                : 'referenceImageAttached';
+            this.referenceImageStatusText.dataset.i18n = statusKey;
+            this.referenceImageStatusText.textContent = window.i18n
+                ? window.i18n.t(statusKey)
+                : (this.referenceImageIsEphemeral
+                    ? '较大参考图仅本次打开有效'
+                    : '1 张参考图');
+        }
+
         if (this.referenceUploadBtn) {
             this.referenceUploadBtn.classList.toggle('has-reference', hasReferenceImage);
         }
@@ -624,6 +717,8 @@ class UIController {
      */
     removeReferenceImage() {
         this.referenceImage = null;
+        this.referenceImageIsEphemeral = false;
+        this.referenceImageEphemeralNoticeShown = false;
         if (this.referenceImageInput) {
             this.referenceImageInput.value = '';
         }
@@ -756,6 +851,7 @@ class UIController {
 
             // Update page manager
             this.pageManager.setPages(result.pages);
+            this.updateBatchGenerationButtons();
 
             // Show render current page button
             if (this.renderCurrentBtn) {
@@ -867,6 +963,7 @@ class UIController {
         try {
             const data = JSON.parse(input);
             this.errorMsg.style.display = 'none';
+            this.syncComicBrainRowsDisplay(data);
 
             if (this.renderer.render(data)) {
                 if (this.pageManager.getPageCount() > 0) {
@@ -901,9 +998,7 @@ class UIController {
                 if (this.renderCurrentBtn) this.renderCurrentBtn.style.display = 'inline-flex';
 
                 // Check if we need to show Generate All button (if we have multiple pages)
-                if (this.pageManager.getPageCount() > 1) {
-                    if (this.generateAllBtn) this.generateAllBtn.style.display = 'inline-flex';
-                }
+                this.updateBatchGenerationButtons();
 
                 return true;
             } else {
@@ -929,6 +1024,11 @@ class UIController {
         if (this.pageManager.getPageCount() > 0) {
             this.pageManager.updateCurrentPage(data);
         }
+
+        // Direct panel edits should survive a refresh immediately. ComicBrain
+        // projects additionally get a debounced, non-canonical review draft.
+        this.saveCurrentSessionState();
+        this.scheduleComicBrainReviewSave();
     }
 
     /**
@@ -937,6 +1037,7 @@ class UIController {
     loadCurrentPage() {
         const pageData = this.pageManager.getCurrentPage();
         if (!pageData) return;
+        this.syncComicBrainRowsDisplay(pageData);
 
         // Update JSON editor
         this.jsonInput.value = JSON.stringify(pageData, null, 2);
@@ -983,6 +1084,33 @@ class UIController {
             // Render sketch
             this.renderComic();
         }
+    }
+
+    /**
+     * For ComicBrain sessions, show the current page's actual row count in the
+     * legacy global selector. Programmatic assignment does not fire "change"
+     * and never modifies the imported page structure.
+     */
+    syncComicBrainRowsDisplay(pageData) {
+        if (
+            !this.rowsPerPageSelect
+            || !this.getComicBrainSource()
+            || !pageData
+            || !Array.isArray(pageData.rows)
+            || pageData.rows.length < 1
+        ) {
+            return;
+        }
+
+        const rowCount = String(pageData.rows.length);
+        if (!this.hasSelectOption(this.rowsPerPageSelect, rowCount)) {
+            const option = document.createElement('option');
+            option.value = rowCount;
+            option.textContent = rowCount;
+            option.dataset.comicBrainDynamic = 'true';
+            this.rowsPerPageSelect.appendChild(option);
+        }
+        this.rowsPerPageSelect.value = rowCount;
     }
 
     /**
@@ -1095,7 +1223,9 @@ class UIController {
 
             // Get current comic style, rows per page, and language
             const comicStyle = this.comicStyleSelect.value;
-            const rowsPerPage = parseInt(this.rowsPerPageSelect.value) || 4;
+            const rowsPerPage = Array.isArray(pageData.rows) && pageData.rows.length > 0
+                ? pageData.rows.length
+                : (parseInt(this.rowsPerPageSelect.value) || 4);
             const language = this.comicLanguageSelect.value;
 
             this.showStatus(window.i18n.t('statusGeneratingImage'), 'info');
@@ -1146,8 +1276,10 @@ class UIController {
                 previousPages,
                 comicStyle,
                 rowsPerPage,
-                language,
-                imageConfig
+                    language,
+                    imageConfig,
+                    this.getComicBrainSource(),
+                    this.getComicBrainRenderMetadata(currentPageIndex, pageData)
             );
 
             if (result.success && result.image_url) {
@@ -1196,6 +1328,11 @@ class UIController {
                     pageData.pageTitle = pageTitle;
                 }
 
+                StoryboardImageReconciler.stampGeneratedImage(
+                    this.generatedPagesImages[currentPageIndex],
+                    pageData
+                );
+
                 // Show the generated image on canvas with flip animation
                 await this.showGeneratedImageOnCanvas(currentPageIndex);
                 this.showStatus(window.i18n.t('statusImageSuccess'), 'success');
@@ -1210,6 +1347,7 @@ class UIController {
 
                 // Save session state immediately
                 this.saveCurrentSessionState();
+                this.updateBatchGenerationButtons();
             } else {
                 throw new Error('Image generation failed');
             }
@@ -1290,10 +1428,61 @@ class UIController {
     }
 
     /**
+     * Check whether a page has a usable generated image.
+     * Supports both the current version-history format and legacy sessions.
+     */
+    hasGeneratedPageImage(pageIndex) {
+        const page = this.generatedPagesImages[pageIndex]
+            || this.generatedPagesImages[String(pageIndex)];
+        if (!page) return false;
+        if (page.imageUrl) return true;
+        return Array.isArray(page.versions)
+            && page.versions.some(version => version && version.imageUrl);
+    }
+
+    /**
+     * Return page indexes that still need an image.
+     */
+    getPendingImagePageIndices(totalPages = this.pageManager.getPageCount()) {
+        const pending = [];
+        for (let i = 0; i < totalPages; i++) {
+            if (!this.hasGeneratedPageImage(i)) {
+                pending.push(i);
+            }
+        }
+        return pending;
+    }
+
+    /**
+     * Keep batch-generation actions in sync with saved progress.
+     */
+    updateBatchGenerationButtons() {
+        const totalPages = this.pageManager.getPageCount();
+        const showBatchActions = totalPages > 1;
+        const pendingPages = this.getPendingImagePageIndices(totalPages);
+        const completedPages = totalPages - pendingPages.length;
+
+        if (this.generateAllBtn) {
+            this.generateAllBtn.style.display = showBatchActions ? 'inline-flex' : 'none';
+        }
+
+        if (this.resumeGenerationBtn) {
+            const canResume = showBatchActions && completedPages > 0 && pendingPages.length > 0;
+            this.resumeGenerationBtn.style.display = canResume ? 'inline-flex' : 'none';
+        }
+
+        if (this.resumeGenerationText && pendingPages.length > 0) {
+            this.resumeGenerationText.textContent = window.i18n.t('resumeGenerationText', {
+                count: pendingPages.length
+            });
+        }
+    }
+
+    /**
      * Generate all pages images with AI
      * Uses previous generated pages as reference for consistency
      */
-    async generateAllPagesImages() {
+    async generateAllPagesImages({ resume = false } = {}) {
         const totalPages = this.pageManager.getPageCount();
 
         if (totalPages === 0) {
@@ -1306,23 +1495,47 @@ class UIController {
             return;
         }
 
-        // Confirm with user
-        if (!confirm(window.i18n.t('alertGenerateAll', { total: totalPages }))) {
+        const pagesToGenerate = resume
+            ? this.getPendingImagePageIndices(totalPages)
+            : Array.from({ length: totalPages }, (_, index) => index);
+
+        if (pagesToGenerate.length === 0) {
+            this.updateBatchGenerationButtons();
+            this.showStatus(window.i18n.t('statusAllSuccess', { total: totalPages }), 'success');
             return;
         }
 
-        // Clear and reset generated images storage for batch generation
-        this.generatedPagesImages = {};
+        const confirmation = resume
+            ? window.i18n.t('alertResumeGeneration', {
+                remaining: pagesToGenerate.length,
+                pages: pagesToGenerate
+                    .map(index => index + 1)
+                    .join(window.i18n.getLanguage() === 'zh' ? '、' : ', ')
+            })
+            : window.i18n.t('alertGenerateAll', { total: totalPages });
+
+        if (!confirm(confirmation)) {
+            return;
+        }
+
+        // A fresh batch replaces old images. Resume preserves every completed page.
+        if (!resume) {
+            this.generatedPagesImages = {};
+            this.saveCurrentSessionState();
+        }
         const comicStyle = this.comicStyleSelect.value;
-        const rowsPerPage = parseInt(this.rowsPerPageSelect.value) || 4;
         const originalPageIndex = this.pageManager.getCurrentPageIndex();
 
         try {
             // Disable buttons during generation - only disable and add spinner, no text change
             this.generateAllBtn.disabled = true;
             this.generateAllBtn.classList.add('loading');
+            if (this.resumeGenerationBtn) {
+                this.resumeGenerationBtn.disabled = true;
+                this.resumeGenerationBtn.classList.add('loading');
+            }
 
-            for (let i = 0; i < totalPages; i++) {
+            for (const i of pagesToGenerate) {
                 // Update status with spinner
                 this.showStatus(window.i18n.t('statusGeneratingPage', { current: i + 1, total: totalPages }), 'info');
 
@@ -1339,6 +1552,9 @@ class UIController {
 
                 // Get current page data
                 const pageData = this.pageManager.getCurrentPage();
+                const rowsPerPage = Array.isArray(pageData.rows) && pageData.rows.length > 0
+                    ? pageData.rows.length
+                    : (parseInt(this.rowsPerPageSelect.value) || 4);
 
                 // Get current sketch as base64 (layout only)
                 const element = this.renderer.getContainer();
@@ -1390,7 +1606,9 @@ class UIController {
                     comicStyle,
                     rowsPerPage,
                     this.comicLanguageSelect.value,
-                    imageConfig
+                    imageConfig,
+                    this.getComicBrainSource(),
+                    this.getComicBrainRenderMetadata(i, pageData)
                 );
 
                 if (result.success && result.image_url) {
@@ -1439,6 +1657,11 @@ class UIController {
                         existingPageData.pageTitle = pageTitle;
                     }
 
+                    StoryboardImageReconciler.stampGeneratedImage(
+                        this.generatedPagesImages[i],
+                        pageData
+                    );
+
                     // Show the generated image on canvas with flip animation
                     await this.showGeneratedImageOnCanvas(i);
 
@@ -1482,10 +1705,11 @@ class UIController {
             this.loadCurrentPage();
 
             // If some images were generated, still show them
-            const partialImages = Object.values(this.generatedPagesImages).sort((a, b) => a.pageIndex - b.pageIndex);
+            const partialImages = Object.values(this.generatedPagesImages)
+                .filter(page => page && this.hasGeneratedPageImage(page.pageIndex))
+                .sort((a, b) => a.pageIndex - b.pageIndex);
             if (partialImages.length > 0) {
                 alert(window.i18n.t('alertBatchError', { success: partialImages.length, total: totalPages, error: error.message }));
-                this.displayAllGeneratedImages(partialImages);
             } else {
                 alert(window.i18n.t('alertBatchFailed', { error: error.message }));
             }
@@ -1493,6 +1717,11 @@ class UIController {
             // Restore button state - only remove disabled and loading class
             this.generateAllBtn.disabled = false;
             this.generateAllBtn.classList.remove('loading');
+            if (this.resumeGenerationBtn) {
+                this.resumeGenerationBtn.disabled = false;
+                this.resumeGenerationBtn.classList.remove('loading');
+            }
+            this.updateBatchGenerationButtons();
 
             // Explicitly show flip button if images were generated
             if (Object.keys(this.generatedPagesImages).length > 0) {
@@ -2036,6 +2265,11 @@ class UIController {
             // Focus on the input
             const input = document.getElementById('cover-custom-input');
             if (input) {
+                const comicBrainRequirements = this.buildComicBrainCoverRequirements();
+                if (!input.value.trim() && comicBrainRequirements) {
+                    input.value = comicBrainRequirements;
+                    this.saveCurrentSessionState();
+                }
                 setTimeout(() => input.focus(), 100);
             }
             // Add click outside to close
@@ -2147,7 +2381,8 @@ class UIController {
                 referenceImages,
                 language,
                 customRequirements,
-                imageConfig
+                imageConfig,
+                this.getComicBrainSource()
             );
 
             if (result.success && result.image_url) {
@@ -2173,6 +2408,596 @@ class UIController {
     }
 
     /**
+     * Display a status scoped to the ComicBrain bridge.
+     */
+    setComicBrainStatus(message, type = '') {
+        if (!this.comicBrainStatus) return;
+        this.comicBrainStatus.textContent = message || '';
+        this.comicBrainStatus.className = 'comicbrain-status' + (type ? ` ${type}` : '');
+    }
+
+    /**
+     * Return a localized bridge message without coupling dynamic statuses to i18n keys.
+     */
+    comicBrainText(zhText, enText) {
+        const language = window.i18n && typeof window.i18n.getLanguage === 'function'
+            ? window.i18n.getLanguage()
+            : 'zh';
+        return language === 'zh' ? zhText : enText;
+    }
+
+    /**
+     * Refresh ComicBrain storyboard packages.
+     */
+    async refreshComicBrainProjects() {
+        if (!this.comicBrainProjectSelect) return;
+
+        this.comicBrainProjectSelect.disabled = true;
+        if (this.comicBrainRefreshBtn) this.comicBrainRefreshBtn.disabled = true;
+        if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = true;
+        this.setComicBrainStatus(
+            this.comicBrainText('正在读取内置 ComicBrain 项目…', 'Reading the embedded ComicBrain workspace…'),
+            'saving'
+        );
+
+        try {
+            this.comicBrainProjects = await ComicAPI.listComicBrainProjects();
+            this.comicBrainProjectSelect.innerHTML = '';
+
+            if (this.comicBrainProjects.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = window.i18n ? window.i18n.t('comicBrainEmpty') : '暂无可载入的分镜';
+                this.comicBrainProjectSelect.appendChild(option);
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        '暂无 production 分镜；先在 ComicBrain 导出章节。',
+                        'No production storyboard yet. Export a chapter from ComicBrain first.'
+                    )
+                );
+                return;
+            }
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = window.i18n ? window.i18n.t('comicBrainChoose') : '选择一个系列与章节';
+            this.comicBrainProjectSelect.appendChild(placeholder);
+
+            this.comicBrainProjects.forEach((project, index) => {
+                const option = document.createElement('option');
+                const seriesId = project.series_id || project.seriesId || '';
+                const chapterId = project.chapter_id || project.chapterId || '';
+                const title = project.title || project.chapter_title || chapterId;
+                const seriesTitle = project.series_title || seriesId;
+                const reviewBadge = project.has_review
+                    ? (project.review_stale
+                        ? this.comicBrainText('（草稿过期）', '(draft stale)')
+                        : this.comicBrainText('（有草稿）', '(has draft)'))
+                    : '';
+
+                option.value = String(index);
+                option.dataset.seriesId = seriesId;
+                option.dataset.chapterId = chapterId;
+                const projectLabel = seriesTitle && title && seriesTitle !== title
+                    ? `${seriesTitle} · ${title}`
+                    : (title || `${seriesId} / ${chapterId}`);
+                option.textContent = reviewBadge ? `${projectLabel} ${reviewBadge}` : projectLabel;
+                this.comicBrainProjectSelect.appendChild(option);
+            });
+
+            this.comicBrainProjectSelect.disabled = false;
+            this.syncComicBrainUIFromSession();
+
+            if (!this.getComicBrainSource()) {
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        `发现 ${this.comicBrainProjects.length} 个可载入分镜。`,
+                        `${this.comicBrainProjects.length} storyboard(s) available.`
+                    ),
+                    'success'
+                );
+            }
+        } catch (error) {
+            this.comicBrainProjects = [];
+            this.comicBrainProjectSelect.innerHTML = '';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = this.comicBrainText('ComicBrain 暂不可用', 'ComicBrain unavailable');
+            this.comicBrainProjectSelect.appendChild(option);
+            this.setComicBrainStatus(
+                this.comicBrainText(
+                    `无法读取 ComicBrain：${error.message}`,
+                    `Could not read ComicBrain: ${error.message}`
+                ),
+                'error'
+            );
+        } finally {
+            if (this.comicBrainRefreshBtn) this.comicBrainRefreshBtn.disabled = false;
+            if (this.comicBrainProjects.length > 0) {
+                this.comicBrainProjectSelect.disabled = false;
+            }
+            if (this.comicBrainLoadBtn) {
+                this.comicBrainLoadBtn.disabled = !this.comicBrainProjectSelect.value;
+            }
+        }
+    }
+
+    /**
+     * Load the selected ComicBrain package into its own reusable local session.
+     */
+    async loadComicBrainProject() {
+        if (!this.comicBrainProjectSelect || !this.comicBrainProjectSelect.value) return;
+
+        const selectedOption = this.comicBrainProjectSelect.options[this.comicBrainProjectSelect.selectedIndex];
+        const summary = this.comicBrainProjects[Number(this.comicBrainProjectSelect.value)] || {};
+        const seriesId = selectedOption.dataset.seriesId || summary.series_id || summary.seriesId;
+        const chapterId = selectedOption.dataset.chapterId || summary.chapter_id || summary.chapterId;
+        if (!seriesId || !chapterId) {
+            this.setComicBrainStatus(
+                this.comicBrainText('项目缺少系列或章节 ID，无法载入。', 'The project is missing a series or chapter ID.'),
+                'error'
+            );
+            return;
+        }
+
+        if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = true;
+        this.setComicBrainStatus(
+            this.comicBrainText('正在载入分镜与 review 草稿…', 'Loading storyboard and review draft…'),
+            'saving'
+        );
+
+        try {
+            const response = await ComicAPI.getComicBrainProject(seriesId, chapterId);
+            const storyboard = response.project;
+            const review = response.review;
+            if (!storyboard || !Array.isArray(storyboard.pages) || storyboard.pages.length === 0) {
+                throw new Error(this.comicBrainText('分镜包没有可用页面', 'The storyboard package has no pages'));
+            }
+
+            const storyboardSource = storyboard.source || {};
+            const reviewSource = review && review.source ? review.source : {};
+            const reviewIdsMatch = !!review
+                && (reviewSource.series_id || reviewSource.seriesId) === seriesId
+                && (reviewSource.chapter_id || reviewSource.chapterId) === chapterId;
+            const storyboardSnapshotHash = storyboardSource.snapshot_hash || storyboard.snapshot_hash;
+            const storyboardSourceHash = storyboardSource.source_hash || storyboard.source_hash;
+            const reviewSnapshotHash = reviewSource.snapshot_hash || (review && review.snapshot_hash);
+            const reviewSourceHash = reviewSource.source_hash || (review && review.source_hash);
+            const storyboardFingerprint = storyboardSnapshotHash || storyboardSourceHash;
+            const reviewFingerprint = reviewSnapshotHash || reviewSourceHash;
+            const hashesMatch = !!storyboardFingerprint
+                && !!reviewFingerprint
+                && storyboardFingerprint === reviewFingerprint;
+            const hasBackendStaleDecision = typeof response.reviewStale === 'boolean';
+            const reviewIsFresh = hasBackendStaleDecision
+                ? response.reviewStale === false
+                : hashesMatch;
+            const restoreReview = !!review
+                && reviewIdsMatch
+                && Array.isArray(review.pages)
+                && review.pages.length > 0
+                && reviewIsFresh;
+            const staleReview = !!review && !restoreReview;
+
+            let packageToLoad = storyboard;
+            if (restoreReview) {
+                packageToLoad = { ...storyboard };
+                Object.entries(review).forEach(([key, value]) => {
+                    if (value !== undefined) packageToLoad[key] = value;
+                });
+                packageToLoad.source = { ...(storyboard.source || {}), ...(review.source || {}) };
+                packageToLoad.settings = { ...(storyboard.settings || {}), ...(review.settings || {}) };
+                if (review.cover == null) packageToLoad.cover = storyboard.cover;
+                if (!Array.isArray(review.characters)) packageToLoad.characters = storyboard.characters;
+            }
+
+            const pages = packageToLoad.pages;
+            const metadata = { ...packageToLoad };
+            delete metadata.pages;
+
+            // Save the previous session before selecting or creating the project's
+            // dedicated working session.
+            this.saveCurrentSessionState();
+            let targetSession = this.sessionManager.getAllSessions().find((session) => {
+                const project = session.comicBrainProject;
+                return project && project.seriesId === seriesId && project.chapterId === chapterId;
+            });
+
+            const currentSession = this.sessionManager.getCurrentSession();
+            const existingTargetSession = targetSession;
+            const localImages = existingTargetSession
+                ? (existingTargetSession.generatedImages || {})
+                : {};
+            const persistedImages = StoryboardImageReconciler.imagesFromRenderManifest(
+                response.renders,
+                pages
+            );
+            const existingImages = {
+                ...persistedImages,
+                ...localImages
+            };
+            const previousSource = existingTargetSession
+                && existingTargetSession.comicBrainProject
+                && existingTargetSession.comicBrainProject.metadata
+                && existingTargetSession.comicBrainProject.metadata.source;
+            const previousScriptHash = previousSource && previousSource.source_hash;
+            const scriptSourceUnchanged = !!storyboardSourceHash
+                && !!previousScriptHash
+                && storyboardSourceHash === previousScriptHash;
+            const previousPages = existingTargetSession
+                && existingTargetSession.comicData
+                && Array.isArray(existingTargetSession.comicData.pages)
+                ? existingTargetSession.comicData.pages
+                : [];
+            const imageReconciliation = StoryboardImageReconciler.reconcile(
+                previousPages,
+                pages,
+                existingImages,
+                { allowLegacyScriptMatch: scriptSourceUnchanged }
+            );
+            const generatedImages = imageReconciliation.generatedImages;
+            const hadExistingImages = Object.values(existingImages)
+                .some(entry => StoryboardImageReconciler.hasUsableImage(entry));
+            let imageLoadSummary = '';
+            if (hadExistingImages) {
+                const preservedCount = imageReconciliation.preservedPageIndices.length;
+                const pendingCount = imageReconciliation.pendingPageIndices.length;
+                if (pendingCount === 0) {
+                    imageLoadSummary = this.comicBrainText(
+                        `；已保留全部 ${preservedCount} 页图片`,
+                        `; kept all ${preservedCount} page image(s)`
+                    );
+                } else {
+                    imageLoadSummary = this.comicBrainText(
+                        `；保留 ${preservedCount} 页图片，${pendingCount} 页待生成`,
+                        `; kept ${preservedCount} page image(s), ${pendingCount} page(s) pending`
+                    );
+                }
+            }
+            const settings = packageToLoad.settings || {};
+            const requestedStyle = settings.comic_style || settings.style;
+            const requestedLanguage = settings.language;
+            const requestedImageSize = settings.image_size;
+            const fallbackSession = existingTargetSession || currentSession;
+            const style = this.hasSelectOption(this.comicStyleSelect, requestedStyle)
+                ? requestedStyle
+                : ((fallbackSession && fallbackSession.style) || 'doraemon');
+            const language = this.hasSelectOption(this.comicLanguageSelect, requestedLanguage)
+                ? requestedLanguage
+                : ((fallbackSession && fallbackSession.language) || 'zh');
+            const firstPageRows = Array.isArray(pages[0] && pages[0].rows) ? pages[0].rows.length : 4;
+            const rowsPerPage = Math.max(1, Math.min(5, Number(settings.rows_per_page) || firstPageRows || 4));
+            const coverCustomRequirements = settings.cover_custom_requirements
+                || (existingTargetSession && existingTargetSession.coverCustomRequirements)
+                || '';
+            const sessionName = packageToLoad.title || summary.title || summary.chapter_title || `${seriesId} · ${chapterId}`;
+
+            if (!targetSession) {
+                targetSession = this.sessionManager.createSession(sessionName, {
+                    style,
+                    language,
+                    pageCount: pages.length,
+                    rowsPerPage
+                });
+            }
+
+            if (!currentSession || currentSession.id !== targetSession.id) {
+                this.sessionManager.switchSession(targetSession.id);
+            }
+
+            this.sessionManager.updateSession(targetSession.id, {
+                name: sessionName,
+                comicData: {
+                    pages,
+                    pageCount: pages.length
+                },
+                generatedImages,
+                currentPageIndex: 0,
+                style,
+                language,
+                pageCount: pages.length,
+                rowsPerPage,
+                coverCustomRequirements,
+                comicBrainProject: {
+                    seriesId,
+                    chapterId,
+                    title: sessionName,
+                    metadata,
+                    importedAt: new Date().toISOString(),
+                    restoredReview: restoreReview
+                }
+            });
+
+            this.generatedPagesImages = generatedImages;
+            this.pageManager.setPages([]);
+            this.jsonInput.value = '';
+            if (this.pageNav) this.pageNav.style.display = 'none';
+            if (this.generateAllBtn) this.generateAllBtn.style.display = 'none';
+            const coverBtn = document.getElementById('generate-cover-btn');
+            if (coverBtn) coverBtn.style.display = 'none';
+            if (this.toggleViewBtn) this.toggleViewBtn.style.display = 'none';
+
+            this.loadSessionState();
+            if (this.hasSelectOption(this.imageSizeSelect, requestedImageSize)) {
+                this.imageSizeSelect.value = requestedImageSize;
+            }
+            this.updateSessionSelector();
+            this.syncComicBrainUIFromSession();
+
+            if (restoreReview) {
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        `已恢复 alpha 草稿 · ${pages.length} 页${imageLoadSummary}；继续编辑会更新 review 草稿。`,
+                        `Restored alpha draft · ${pages.length} pages${imageLoadSummary}; further edits update the review draft.`
+                    ),
+                    'success'
+                );
+            } else if (staleReview) {
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        `旧草稿已过期，已载入最新分镜 · ${pages.length} 页${imageLoadSummary}；旧 review.json 仍保留。`,
+                        `The old draft is stale. Loaded the latest ${pages.length}-page storyboard${imageLoadSummary}; review.json is preserved.`
+                    ),
+                    'error'
+                );
+            } else {
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        `已载入 ${pages.length} 页${imageLoadSummary}；编辑会保存为 review 草稿，不会改写正史。`,
+                        `Loaded ${pages.length} pages${imageLoadSummary}; edits save to a review draft and do not change canon.`
+                    ),
+                    'success'
+                );
+            }
+        } catch (error) {
+            this.setComicBrainStatus(
+                this.comicBrainText(`载入失败：${error.message}`, `Load failed: ${error.message}`),
+                'error'
+            );
+        } finally {
+            if (this.comicBrainLoadBtn) {
+                this.comicBrainLoadBtn.disabled = !this.comicBrainProjectSelect.value;
+            }
+        }
+    }
+
+    /**
+     * Check whether a select control supports a requested value.
+     */
+    hasSelectOption(select, value) {
+        if (!select || !value) return false;
+        return Array.from(select.options).some(option => option.value === value);
+    }
+
+    /**
+     * Return the safe project locator sent to image/cover generation.
+     */
+    getComicBrainSource(session = null) {
+        const activeSession = session || (this.sessionManager && this.sessionManager.getCurrentSession());
+        const project = activeSession && activeSession.comicBrainProject;
+        if (!project) return null;
+        const metadataSource = project.metadata && project.metadata.source;
+        return {
+            series_id: project.seriesId || null,
+            chapter_id: project.chapterId || null,
+            // Keep ComicBrain requests distinct from ordinary image generation.
+            // Snapshot hashes cover the full derived package; source_hash remains
+            // available for legacy exports. Missing values stay explicit so the
+            // backend can reject stale sessions instead of dropping the checks.
+            snapshot_hash: (metadataSource && metadataSource.snapshot_hash) || null,
+            source_hash: (metadataSource && metadataSource.source_hash) || null
+        };
+    }
+
+    /**
+     * Describe the page image being generated so ComicBrain can persist its
+     * page association outside browser localStorage.
+     */
+    getComicBrainRenderMetadata(pageIndex, pageData) {
+        if (!this.getComicBrainSource() || !pageData) return null;
+        return {
+            page_index: pageIndex,
+            page_id: pageData.id || `page-${pageIndex + 1}`,
+            page_title: pageData.title || `Page ${pageIndex + 1}`,
+            page_script_fingerprint: StoryboardImageReconciler.pageFingerprint(pageData)
+        };
+    }
+
+    /**
+     * Keep the project selector aligned with the current local session.
+     */
+    syncComicBrainUIFromSession() {
+        if (!this.comicBrainProjectSelect) return;
+        const source = this.getComicBrainSource();
+
+        if (!source) {
+            if (this.comicBrainProjectSelect.options.length > 0) {
+                this.comicBrainProjectSelect.value = '';
+            }
+            if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = true;
+            if (this.comicBrainProjects.length > 0) {
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        `发现 ${this.comicBrainProjects.length} 个可载入分镜。`,
+                        `${this.comicBrainProjects.length} storyboard(s) available.`
+                    )
+                );
+            }
+            return;
+        }
+
+        const matchingIndex = this.comicBrainProjects.findIndex((project) => {
+            const seriesId = project.series_id || project.seriesId;
+            const chapterId = project.chapter_id || project.chapterId;
+            return seriesId === source.series_id && chapterId === source.chapter_id;
+        });
+        if (matchingIndex >= 0) {
+            this.comicBrainProjectSelect.value = String(matchingIndex);
+            if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = false;
+        }
+
+        const session = this.sessionManager.getCurrentSession();
+        const projectName = session && session.comicBrainProject && session.comicBrainProject.title;
+        this.setComicBrainStatus(
+            this.comicBrainText(
+                `${projectName || source.chapter_id} · 本会话连接到 ComicBrain review 草稿。`,
+                `${projectName || source.chapter_id} · This session is linked to a ComicBrain review draft.`
+            ),
+            'success'
+        );
+    }
+
+    /**
+     * Build a full review package while retaining all imported metadata.
+     */
+    buildComicBrainReview(session) {
+        const project = session && session.comicBrainProject;
+        if (!project || !session.comicData || !Array.isArray(session.comicData.pages)) return null;
+
+        const metadata = project.metadata || {};
+        return {
+            ...metadata,
+            schema_version: metadata.schema_version || 'comicbrain-alpha/1',
+            source: {
+                ...(metadata.source || {}),
+                series_id: project.seriesId,
+                chapter_id: project.chapterId
+            },
+            pages: session.comicData.pages,
+            cover: metadata.cover !== undefined ? metadata.cover : null,
+            characters: Array.isArray(metadata.characters) ? metadata.characters : [],
+            settings: {
+                ...(metadata.settings || {}),
+                comic_style: session.style,
+                language: session.language,
+                rows_per_page: session.rowsPerPage,
+                cover_custom_requirements: session.coverCustomRequirements || ''
+            }
+        };
+    }
+
+    /**
+     * Debounce remote draft writes per session while localStorage stays immediate.
+     */
+    scheduleComicBrainReviewSave() {
+        const session = this.sessionManager && this.sessionManager.getCurrentSession();
+        if (!session || !this.getComicBrainSource(session)) return;
+
+        const sessionId = session.id;
+        const revision = (this.comicBrainReviewRevisions.get(sessionId) || 0) + 1;
+        this.comicBrainReviewRevisions.set(sessionId, revision);
+
+        const existingTimer = this.comicBrainReviewTimers.get(sessionId);
+        if (existingTimer) window.clearTimeout(existingTimer);
+
+        this.setComicBrainStatus(
+            this.comicBrainText(
+                '修改已保存到浏览器，正在准备 review 草稿…',
+                'Saved locally; preparing the review draft…'
+            ),
+            'saving'
+        );
+
+        const timer = window.setTimeout(() => {
+            this.comicBrainReviewTimers.delete(sessionId);
+            this.enqueueComicBrainReviewSave(sessionId, revision);
+        }, 800);
+        this.comicBrainReviewTimers.set(sessionId, timer);
+    }
+
+    /**
+     * Serialize review writes per session. This guarantees that an older PUT
+     * cannot finish after, and overwrite, a newer draft.
+     */
+    enqueueComicBrainReviewSave(sessionId, revision) {
+        const previousSave = this.comicBrainReviewQueues.get(sessionId) || Promise.resolve();
+        const queuedSave = previousSave
+            .catch(() => undefined)
+            .then(() => this.saveComicBrainReview(sessionId, revision));
+
+        this.comicBrainReviewQueues.set(sessionId, queuedSave);
+        const cleanup = () => {
+            if (this.comicBrainReviewQueues.get(sessionId) === queuedSave) {
+                this.comicBrainReviewQueues.delete(sessionId);
+            }
+        };
+        queuedSave.then(cleanup, cleanup);
+        return queuedSave;
+    }
+
+    /**
+     * Persist a ComicBrain review without promoting it to canonical content.
+     */
+    async saveComicBrainReview(sessionId, revision) {
+        const session = this.sessionManager.getSession(sessionId);
+        const source = this.getComicBrainSource(session);
+        const review = this.buildComicBrainReview(session);
+        if (!session || !source || !review) return;
+
+        if (this.sessionManager.getCurrentSession()?.id === sessionId) {
+            this.setComicBrainStatus(
+                this.comicBrainText('正在保存 review 草稿…', 'Saving review draft…'),
+                'saving'
+            );
+        }
+
+        try {
+            await ComicAPI.saveComicBrainReview(source.series_id, source.chapter_id, review);
+            if (
+                this.comicBrainReviewRevisions.get(sessionId) === revision
+                && this.sessionManager.getCurrentSession()?.id === sessionId
+            ) {
+                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        `review 草稿已保存 ${time} · 未改写正史`,
+                        `Review draft saved ${time} · canon unchanged`
+                    ),
+                    'success'
+                );
+            }
+        } catch (error) {
+            if (
+                this.comicBrainReviewRevisions.get(sessionId) === revision
+                && this.sessionManager.getCurrentSession()?.id === sessionId
+            ) {
+                this.setComicBrainStatus(
+                    this.comicBrainText(
+                        `浏览器内已保存；review 写入失败：${error.message}`,
+                        `Saved locally; review write failed: ${error.message}`
+                    ),
+                    'error'
+                );
+            }
+        }
+    }
+
+    /**
+     * Use ComicBrain cover intent as an initial requirement without replacing
+     * anything the user already typed.
+     */
+    buildComicBrainCoverRequirements() {
+        const session = this.sessionManager && this.sessionManager.getCurrentSession();
+        const cover = session && session.comicBrainProject
+            && session.comicBrainProject.metadata
+            && session.comicBrainProject.metadata.cover;
+        if (!cover) return '';
+        if (typeof cover === 'string') return cover.trim();
+
+        const labels = {
+            title: this.comicBrainText('标题', 'Title'),
+            brief: this.comicBrainText('封面构想', 'Cover brief'),
+            context: this.comicBrainText('剧情语境', 'Story context'),
+            prompt: this.comicBrainText('画面要求', 'Visual direction'),
+            description: this.comicBrainText('说明', 'Description')
+        };
+        return Object.keys(labels)
+            .filter(key => typeof cover[key] === 'string' && cover[key].trim())
+            .map(key => `${labels[key]}：${cover[key].trim()}`)
+            .join('\n');
+    }
+
+    /**
      * Save current session state
      */
     saveCurrentSessionState() {
@@ -2192,7 +3017,8 @@ class UIController {
             pageCount: this.pageCountInput ? parseInt(this.pageCountInput.value) : 3,
             rowsPerPage: this.rowsPerPageSelect ? parseInt(this.rowsPerPageSelect.value) : 4,
             prompt: this.promptInput ? this.promptInput.value : '',
-            referenceImage: this.referenceImage
+            referenceImage: this.getPersistableReferenceImage(),
+            coverCustomRequirements: this.coverCustomInput ? this.coverCustomInput.value : ''
         });
     }
 
@@ -2214,6 +3040,7 @@ class UIController {
             });
 
             this.generatedPagesImages = session.generatedImages || {};
+            this.updateBatchGenerationButtons();
 
             // Restore style and language
             if (this.comicStyleSelect) {
@@ -2238,12 +3065,18 @@ class UIController {
                 this.rowsPerPageSelect.value = session.rowsPerPage || 4;
             }
 
+            if (this.coverCustomInput) {
+                this.coverCustomInput.value = session.coverCustomRequirements || '';
+            }
+
             // Restore reference image
             if (session.referenceImage) {
                 this.referenceImage = session.referenceImage;
             } else {
                 this.referenceImage = null;
             }
+            this.referenceImageIsEphemeral = this.isReferenceImageTooLargeForStorage();
+            this.referenceImageEphemeralNoticeShown = false;
             this.updateReferenceImageUI();
 
             // Restore comic data
@@ -2263,7 +3096,7 @@ class UIController {
                 // Show navigation if multiple pages
                 if (session.comicData.pageCount > 1) {
                     this.pageNav.style.display = 'flex';
-                    this.generateAllBtn.style.display = 'inline-flex';
+                    this.updateBatchGenerationButtons();
                 }
 
                 // Show render button
@@ -2284,8 +3117,10 @@ class UIController {
             if (this.pageManager.getPageCount() > 0) {
                 this.loadCurrentPage();
             }
+            this.updateBatchGenerationButtons();
         } finally {
             this.isLoadingSession = false;
+            this.syncComicBrainUIFromSession();
         }
     }
 
@@ -2615,6 +3450,10 @@ function generateAllPagesImages() {
     if (app) app.generateAllPagesImages();
 }
 
+function resumeAllPagesImages() {
+    if (app) app.generateAllPagesImages({ resume: true });
+}
+
 function generateXiaohongshuContent() {
     if (app) app.generateXiaohongshuContent();
 }
@@ -2649,6 +3488,10 @@ function changeLanguage(lang) {
     if (comicLanguageSelect) {
         comicLanguageSelect.value = lang;
     }
+    if (app) {
+        app.saveCurrentSessionState();
+        app.scheduleComicBrainReviewSave();
+    }
 }
 
 // Session management global functions
@@ -2662,6 +3505,14 @@ function createNewSession() {
 
 function toggleSessionManager() {
     if (app) app.toggleSessionManager();
+}
+
+function refreshComicBrainProjects() {
+    if (app) app.refreshComicBrainProjects();
+}
+
+function loadComicBrainProject() {
+    if (app) app.loadComicBrainProject();
 }
 
 /**

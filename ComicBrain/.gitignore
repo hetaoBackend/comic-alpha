@@ -1,0 +1,21 @@
+# ComicBrain is embedded in comic-alpha, but the vault itself is local/private
+# by default. Only reusable behavior under .agents/skills, AGENTS.md, and the
+# production contract are eligible for Git.
+/*
+!/.gitignore
+!/AGENTS.md
+!/.agents/
+!/production/
+
+# Keep the production contract, not chapter snapshots, reviews, or renders.
+/production/*
+!/production/README.md
+
+# Never expose local state or generated interpreter/environment files from the
+# reusable directories above.
+**/.DS_Store
+**/*.icloud
+**/__pycache__/
+**/*.py[cod]
+**/.env*
+**/.venv/

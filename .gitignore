@@ -37,3 +37,9 @@ assets/refer_image/disney/大福.png
 # Uncomment below to ignore all generated assets:
 # assets/examples/*.png
 # assets/examples/*.jpg
+
+# Local integration scratch space
+.workspace/
+
+# The embedded ComicBrain vault has its own privacy-first allowlist in
+# ComicBrain/.gitignore. Never force-add ignored knowledge or production data.

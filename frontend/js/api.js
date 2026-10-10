@@ -105,7 +105,7 @@ class ComicAPI {
      * @param {Object} imageConfig - Image provider/model settings
      * @returns {Promise<Object>} Generated image result
      */
-    static async generateComicImage(pageData, referenceImg = null, extraBody = null, comicStyle = 'doraemon', rowsPerPage = null, language = 'zh', imageConfig = {}) {
+    static async generateComicImage(pageData, referenceImg = null, extraBody = null, comicStyle = 'doraemon', rowsPerPage = null, language = 'zh', imageConfig = {}, comicBrainSource = null, comicBrainRender = null) {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-image`, {
                 method: 'POST',
@@ -126,7 +126,9 @@ class ComicAPI {
                     extra_body: extraBody,
                     comic_style: comicStyle,
                     rows_per_page: rowsPerPage,
-                    language: language
+                    language: language,
+                    comicbrain_source: comicBrainSource,
+                    comicbrain_render: comicBrainRender
                 })
             });
 
@@ -203,7 +205,7 @@ class ComicAPI {
      * @param {Object} imageConfig - Image provider/model settings
      * @returns {Promise<Object>} Generation result
      */
-    static async generateCover(comicStyle, referenceImages = null, language = 'en', customRequirements = '', imageConfig = {}) {
+    static async generateCover(comicStyle, referenceImages = null, language = 'en', customRequirements = '', imageConfig = {}, comicBrainSource = null) {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-cover`, {
                 method: 'POST',
@@ -222,7 +224,8 @@ class ComicAPI {
                     reasoning_effort: imageConfig.reasoningEffort || 'medium',
                     reference_imgs: referenceImages,
                     language: language,
-                    custom_requirements: customRequirements
+                    custom_requirements: customRequirements,
+                    comicbrain_source: comicBrainSource
                 })
             });
 
@@ -323,6 +326,94 @@ class ComicAPI {
             return data;
         } catch (error) {
             console.error('Session title generation failed:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * List storyboard packages exported by the embedded ComicBrain workspace.
+     * @returns {Promise<Array>} Available ComicBrain projects
+     */
+    static async listComicBrainProjects() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/comicbrain/projects`);
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || data.success === false) {
+                throw new Error(data.error || `API request failed: ${response.status}`);
+            }
+
+            return Array.isArray(data.projects) ? data.projects : [];
+        } catch (error) {
+            console.error('ComicBrain project listing failed:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Load one ComicBrain storyboard package.
+     * @param {string} seriesId - ComicBrain series ID
+     * @param {string} chapterId - ComicBrain chapter ID
+     * @returns {Promise<{project: Object, review: Object|null}>} Storyboard and optional review draft
+     */
+    static async getComicBrainProject(seriesId, chapterId) {
+        try {
+            const path = `${encodeURIComponent(seriesId)}/${encodeURIComponent(chapterId)}`;
+            const response = await fetch(`${API_BASE_URL}/comicbrain/projects/${path}`);
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || data.success === false) {
+                throw new Error(data.error || `API request failed: ${response.status}`);
+            }
+
+            // The backend wraps the canonical package in "project" and may return
+            // a separate alpha review draft. Tolerate a raw package as well.
+            if (data.project) {
+                return {
+                    project: data.project,
+                    review: data.review || null,
+                    reviewStale: data.review_stale,
+                    renders: data.renders || null
+                };
+            }
+            return {
+                project: data,
+                review: null,
+                reviewStale: undefined,
+                renders: null
+            };
+        } catch (error) {
+            console.error('ComicBrain project loading failed:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Save an edited storyboard as a non-canonical ComicBrain review draft.
+     * @param {string} seriesId - ComicBrain series ID
+     * @param {string} chapterId - ComicBrain chapter ID
+     * @param {Object} review - Full review package
+     * @returns {Promise<Object>} Saved review metadata
+     */
+    static async saveComicBrainReview(seriesId, chapterId, review) {
+        try {
+            const path = `${encodeURIComponent(seriesId)}/${encodeURIComponent(chapterId)}`;
+            const response = await fetch(`${API_BASE_URL}/comicbrain/projects/${path}/review`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(review)
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || data.success === false) {
+                throw new Error(data.error || `API request failed: ${response.status}`);
+            }
+
+            return data.review || data;
+        } catch (error) {
+            console.error('ComicBrain review saving failed:', error);
             throw error;
         }
     }

@@ -21,6 +21,21 @@ class ComicRenderer {
         try {
             this.currentData = data;
             this.container.innerHTML = ''; // Clear current content
+            const canvas = data && data.canvas;
+            const hasFixedCanvas = !!(
+                canvas
+                && Number(canvas.width) > 0
+                && Number(canvas.height) > 0
+            );
+            this.container.classList.toggle('mobile-comic-canvas', hasFixedCanvas);
+            if (hasFixedCanvas) {
+                this.container.style.setProperty(
+                    '--comic-canvas-ratio',
+                    `${Number(canvas.width)} / ${Number(canvas.height)}`
+                );
+            } else {
+                this.container.style.removeProperty('--comic-canvas-ratio');
+            }
 
             // Render rows
             if (data.rows && Array.isArray(data.rows)) {
@@ -45,7 +60,13 @@ class ComicRenderer {
     _createRow(row) {
         const rowDiv = document.createElement('div');
         rowDiv.className = 'comic-row';
-        rowDiv.style.height = row.height || '150px';
+        if (this.container.classList.contains('mobile-comic-canvas')) {
+            const weight = Number(row.weight);
+            rowDiv.style.flex = `${Number.isFinite(weight) && weight > 0 ? weight : 1} 1 0`;
+            rowDiv.style.minHeight = '0';
+        } else {
+            rowDiv.style.height = row.height || '150px';
+        }
 
         if (row.panels && Array.isArray(row.panels)) {
             row.panels.forEach(panel => {
@@ -77,7 +98,7 @@ class ComicRenderer {
         panelDiv._panelData = panel;
 
         // Update panel data when content changes
-        panelDiv.addEventListener('blur', () => {
+        panelDiv.addEventListener('input', () => {
             panel.text = panelDiv.innerText;
             this._notifyDataChange();
         });
@@ -97,6 +118,8 @@ class ComicRenderer {
      */
     clear() {
         this.container.innerHTML = '';
+        this.container.classList.remove('mobile-comic-canvas');
+        this.container.style.removeProperty('--comic-canvas-ratio');
     }
 
     /**

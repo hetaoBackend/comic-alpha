@@ -93,7 +93,9 @@ comic_alpha/
 │       ├── sessionManager.js # 会话管理模块
 │       ├── exporter.js       # 图片导出模块
 │       └── app.js            # 主控制器
+├── ComicBrain/                # 内置漫画知识库与制作分镜
 ├── index.html                 # 主页面
+├── serve_frontend.py          # 仅开放公开资源的本地前端服务
 ├── start.sh                   # Linux/macOS 启动脚本
 └── start.bat                  # Windows 启动脚本
 ```
@@ -152,11 +154,41 @@ uv run app.py
 使用本地服务器：
 
 ```bash
-# 使用 Python 启动简单的 HTTP 服务器
-python -m http.server 8000
+# 仅向本机开放页面、前端代码、公开素材和生成图片
+python3 serve_frontend.py
 ```
 
 然后访问 `http://localhost:8000`
+
+## 直接载入 ComicBrain 分镜
+
+ComicBrain 已内置在 comic-alpha 仓库中，后端会自动发现它的制作分镜：
+
+```text
+comic-alpha/
+├── ComicBrain/
+│   └── production/
+├── backend/
+└── frontend/
+```
+
+在 ComicBrain 中确认章节脚本后，从 comic-alpha 根目录导出制作快照：
+
+```bash
+python3 ComicBrain/.agents/skills/comic-wiki/scripts/export_comic_alpha.py \
+  --series-id <series-id> \
+  --chapter-id <chapter-id>
+```
+
+启动 comic-alpha 后，在页面的 **ComicBrain 分镜** 区域选择章节并点击 **载入分镜**。这条路径会跳过二次 AI 分镜生成，直接进入人工调整和生图阶段；每页会保留自己真实的行数，生图和封面也会自动使用 ComicBrain 已确认的人物参考图。
+
+人工修改会立即保存到浏览器，并写入对应章节的 `ComicBrain/production/<series-id>/<chapter-id>/review.json`。`review.json` 始终是制作草稿，不会自动改写 ComicBrain 正史；如果上游脚本、布局或正史参考图变化，完整制作快照哈希也会变化，旧草稿不会覆盖新分镜。页面成图版本也会持久保存到 `renders/manifest.json`。再次点击 **载入分镜** 时——即使更换浏览器——未变化的页面也会恢复原图，变化或新增的页面进入待生成状态，可通过 **继续生成** 单独补齐。
+
+默认工作区为仓库内的 `./ComicBrain`。只有使用外部工作区时才需要通过 `COMICBRAIN_ROOT` 指定绝对路径。
+
+`ComicBrain/.gitignore` 默认忽略具体剧情、人物、系列素材、用户偏好、原始证据以及章节制作产物；Git 只会看到可复用的 Agent 规则、技能、模板和制作契约。不要使用 `git add -f` 强行加入这些私人知识文件。
+
+在 Obsidian 中请把 `comic-alpha/ComicBrain` 作为 Vault 打开；在 Codex 中建议直接打开 `comic-alpha` 仓库根目录，顶层 Agent 规则会把漫画知识任务路由到内置 ComicBrain。
 
 ## 使用说明
 
@@ -476,8 +508,9 @@ A: 确保已加载 html2canvas 库，检查浏览器控制台是否有错误信�
 ### Q: 如何部署到生产环境？
 A: 
 1. 后端使用 Gunicorn 或 uWSGI 部署
-2. 前端使用 Nginx 或其他 Web 服务器托管
+2. 前端只托管 `index.html`、`frontend/`、`assets/` 和 `backend/static/images/`，不要把整个仓库设为 Web 根目录
 3. 配置 CORS 允许前端域名访问后端
+4. 确保 `ComicBrain/`、`.git/` 和环境文件在 Web 层不可访问
 
 ## 许可证
 

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>comic-perfect</title>
     <link rel="icon" type="image/jpeg" href="assets/favicon.jpeg">
-    <link rel="stylesheet" href="frontend/css/style.css?v=12">
+    <link rel="stylesheet" href="frontend/css/style.css?v=14">
 </head>
 
 <body>
@@ -215,6 +215,7 @@
             <div class="flex-row">
                 <label style="white-space: nowrap;" data-i18n="comicStyleLabel">漫画风格:</label>
                 <select id="comic-style" style="flex: 1;">
+                    <option value="reference" data-i18n="styleReference">跟随参考图画风</option>
                     <option value="doraemon" data-i18n="styleDoraemon">哆啦A梦风格</option>
                     <option value="american" data-i18n="styleAmerican">美式漫画风格</option>
                     <option value="watercolor" data-i18n="styleWatercolor">水彩风格</option>
@@ -236,6 +237,33 @@
                 </select>
             </div>
             <div id="ai-status"></div>
+        </div>
+
+        <!-- ComicBrain Storyboard Import -->
+        <div class="comicbrain-section">
+            <div class="comicbrain-heading">
+                <div>
+                    <div class="comicbrain-title" data-i18n="comicBrainTitle">ComicBrain 分镜</div>
+                    <div class="comicbrain-subtitle" data-i18n="comicBrainSubtitle">载入后可直接编辑，修改会保存为 review 草稿</div>
+                </div>
+                <button onclick="refreshComicBrainProjects()" class="comicbrain-icon-btn" id="comicbrain-refresh-btn"
+                    data-i18n-title="comicBrainRefresh" title="刷新项目" aria-label="刷新 ComicBrain 项目">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M20 11A8 8 0 1 0 18.4 15.8" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" />
+                        <path d="M20 5V11H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                </button>
+            </div>
+            <div class="comicbrain-controls">
+                <select id="comicbrain-project-select" class="comicbrain-project-select">
+                    <option value="" data-i18n="comicBrainLoading">正在读取项目…</option>
+                </select>
+                <button onclick="loadComicBrainProject()" id="comicbrain-load-btn" class="comicbrain-load-btn"
+                    data-i18n="comicBrainLoad" disabled>载入分镜</button>
+            </div>
+            <div id="comicbrain-status" class="comicbrain-status" role="status" aria-live="polite"></div>
         </div>
 
         <!-- Session Management Section -->
@@ -437,6 +465,15 @@
                     </svg>
                     <span data-i18n="generateAllText">生成全部</span>
                 </button>
+                <!-- Resume Interrupted Image Generation Button -->
+                <button onclick="resumeAllPagesImages()" class="resume-generation-btn" id="resume-generation-btn"
+                    style="display: none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M8 5V19L19 12L8 5Z" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                    </svg>
+                    <span id="resume-generation-text" data-i18n="resumeGenerationText">继续生成</span>
+                </button>
                 <!-- Generate Cover Button -->
                 <button onclick="generateCover()" class="generate-cover-btn" id="generate-cover-btn" style="display: none;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -477,15 +514,16 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- Application Modules -->
-    <script src="frontend/js/i18n.js?v=11"></script>
+    <script src="frontend/js/i18n.js?v=15"></script>
     <script src="frontend/js/theme.js?v=4"></script>
     <script src="frontend/js/config.js?v=6"></script>
-    <script src="frontend/js/api.js?v=8"></script>
-    <script src="frontend/js/renderer.js?v=4"></script>
+    <script src="frontend/js/api.js?v=10"></script>
+    <script src="frontend/js/renderer.js?v=5"></script>
     <script src="frontend/js/pageManager.js?v=4"></script>
     <script src="frontend/js/exporter.js?v=4"></script>
-    <script src="frontend/js/sessionManager.js?v=2"></script>
-    <script src="frontend/js/app.js?v=21"></script>
+    <script src="frontend/js/sessionManager.js?v=3"></script>
+    <script src="frontend/js/storyboardImageReconciler.js?v=3"></script>
+    <script src="frontend/js/app.js?v=29"></script>
 </body>
 
 </html>

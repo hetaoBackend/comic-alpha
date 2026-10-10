@@ -6,6 +6,7 @@ import uuid
 import io
 import base64
 import json
+import math
 
 from dotenv import load_dotenv
 from typing import Optional
@@ -94,6 +95,28 @@ def _generated_image_to_png_bytes(generated_image) -> bytes:
         buffer = io.BytesIO()
         generated_image.save(buffer, image_format="PNG")
     return buffer.getvalue()
+
+
+def _parse_target_size(size: Optional[str]) -> Optional[tuple[int, int]]:
+    """Parse a bounded WIDTHxHEIGHT image size, ignoring provider 'auto'."""
+    if not isinstance(size, str) or size.lower() == "auto":
+        return None
+    parts = size.lower().split("x", 1)
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        return None
+    width, height = (int(part) for part in parts)
+    if not (256 <= width <= 4096 and 256 <= height <= 4096):
+        return None
+    return width, height
+
+
+def _aspect_ratio_for_size(size: Optional[str], default: str = "9:16") -> str:
+    target = _parse_target_size(size)
+    if not target:
+        return default
+    width, height = target
+    divisor = math.gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
 
 
 def _collect_openai_reference_images(
@@ -397,7 +420,7 @@ def generate_codex_image_core(
             response = requests.post(url, headers=headers, json=body, timeout=180)
             _raise_for_codex_status(response, "Codex image generation")
             image_bytes = _extract_codex_image_from_sse(response.text)
-            return _save_generated_image(image_bytes)
+            return _save_generated_image(image_bytes, target_size=size)
         except Exception as e:
             last_exception = e
             logger.warning(f"Codex image attempt {attempt + 1}/{max_retries} failed: {str(e)}")
@@ -413,16 +436,41 @@ def generate_codex_image_core(
     return None
 
 
-def _save_generated_image(image_bytes: bytes) -> str:
+def _save_generated_image(
+        image_bytes: bytes,
+        target_size: Optional[str] = None
+    ) -> str:
+    """Save generated output as PNG, normalizing to the requested canvas."""
     filename = f"{uuid.uuid4()}.png"
     base_dir = os.path.dirname(os.path.abspath(__file__))
     static_dir = os.path.join(base_dir, "static", "images")
     os.makedirs(static_dir, exist_ok=True)
 
     save_path = os.path.join(static_dir, filename)
-    with open(save_path, "wb") as f:
-        f.write(image_bytes)
-    logger.info(f"Image saved to {save_path}")
+    target = _parse_target_size(target_size)
+    if target:
+        with Image.open(io.BytesIO(image_bytes)) as opened:
+            image = ImageOps.exif_transpose(opened).convert("RGBA")
+            background = Image.new("RGBA", image.size, "white")
+            background.alpha_composite(image)
+            normalized = ImageOps.pad(
+                background.convert("RGB"),
+                target,
+                method=Image.Resampling.LANCZOS,
+                color="white",
+                centering=(0.5, 0.5),
+            )
+            normalized.save(save_path, format="PNG", optimize=True)
+        logger.info(
+            "Image normalized to %sx%s and saved to %s",
+            target[0],
+            target[1],
+            save_path,
+        )
+    else:
+        with open(save_path, "wb") as f:
+            f.write(image_bytes)
+        logger.info(f"Image saved to {save_path}")
 
     return f"/backend/static/images/{filename}"
 
@@ -474,7 +522,7 @@ def generate_openai_image_core(
             else:
                 raise ValueError("No image data returned by OpenAI API")
 
-            return _save_generated_image(image_bytes)
+            return _save_generated_image(image_bytes, target_size=size)
         except Exception as e:
             last_exception = e
             logger.warning(f"OpenAI image attempt {attempt + 1}/{max_retries} failed: {str(e)}")
@@ -494,6 +542,7 @@ def generate_social_media_image_core(
         prompt: str, 
         reference_img: Optional[str | list] = None,
         google_api_key: Optional[str] = None,
+        size: str = "1024x1536",
         max_retries: int = 3,
         retry_delay: float = 1.0
     ) -> Optional[str]:
@@ -556,8 +605,8 @@ def generate_social_media_image_core(
                 logger.warning(f"Failed to process reference image {img_str[:50]}...: {e}")
 
     # Extract config from extra_body
-    aspect_ratio = "9:16"
-    image_size = "2K"
+    aspect_ratio = _aspect_ratio_for_size(size)
+    gemini_image_size = "2K"
 
     # Retry logic
     last_exception = None
@@ -572,7 +621,7 @@ def generate_social_media_image_core(
                     temperature=0.2,
                     image_config=ImageConfig(
                         aspect_ratio=aspect_ratio,
-                        image_size=image_size,
+                        image_size=gemini_image_size,
                     ),
                 ),
             )
@@ -592,7 +641,10 @@ def generate_social_media_image_core(
                     break
             
             if generated_image:
-                return _save_generated_image(_generated_image_to_png_bytes(generated_image))
+                return _save_generated_image(
+                    _generated_image_to_png_bytes(generated_image),
+                    target_size=size,
+                )
             else:
                 raise ValueError("No image generated in response")
 

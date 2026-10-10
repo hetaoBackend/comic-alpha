@@ -1,0 +1,4 @@
+interface:
+  display_name: "漫画 Wiki"
+  short_description: "读取维护漫画正史、脚本、封面描述、分镜与制作快照"
+  default_prompt: "使用 $comic-wiki 读取并维护 ComicBrain 中的漫画知识。"

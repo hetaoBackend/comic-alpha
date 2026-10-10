@@ -54,6 +54,9 @@ class SessionManager {
             pageCount: config.pageCount || 3,
             rowsPerPage: config.rowsPerPage || 4,
             prompt: '',
+            referenceImage: config.referenceImage || null,
+            coverCustomRequirements: config.coverCustomRequirements || '',
+            comicBrainProject: config.comicBrainProject || null,
             createdAt: now,
             updatedAt: now
         };
@@ -132,6 +135,9 @@ class SessionManager {
         if (data.pageCount !== undefined) session.pageCount = data.pageCount;
         if (data.rowsPerPage !== undefined) session.rowsPerPage = data.rowsPerPage;
         if (data.prompt !== undefined) session.prompt = data.prompt;
+        if (data.referenceImage !== undefined) session.referenceImage = data.referenceImage;
+        if (data.coverCustomRequirements !== undefined) session.coverCustomRequirements = data.coverCustomRequirements;
+        if (data.comicBrainProject !== undefined) session.comicBrainProject = data.comicBrainProject;
 
         session.updatedAt = new Date().toISOString();
 
@@ -205,8 +211,18 @@ class SessionManager {
         const hasPrompt = session.prompt && session.prompt.trim().length > 0;
         const hasComicData = session.comicData !== null && session.comicData !== undefined;
         const hasGeneratedImages = session.generatedImages && Object.keys(session.generatedImages).length > 0;
+        const hasReferenceImage = !!session.referenceImage;
+        const hasCoverRequirements = !!(
+            session.coverCustomRequirements && session.coverCustomRequirements.trim()
+        );
+        const hasComicBrainProject = !!session.comicBrainProject;
 
-        return !hasPrompt && !hasComicData && !hasGeneratedImages;
+        return !hasPrompt
+            && !hasComicData
+            && !hasGeneratedImages
+            && !hasReferenceImage
+            && !hasCoverRequirements
+            && !hasComicBrainProject;
     }
 
     /**

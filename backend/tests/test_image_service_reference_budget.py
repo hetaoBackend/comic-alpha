@@ -2,6 +2,8 @@ import os
 import sys
 import unittest
 import json
+import io
+from pathlib import Path
 
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -9,7 +11,11 @@ PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
 sys.path.insert(0, BACKEND_DIR)
 
 from PIL import Image  # noqa: E402
-from comic_generator import _generated_image_to_png_bytes  # noqa: E402
+from comic_generator import (  # noqa: E402
+    _aspect_ratio_for_size,
+    _generated_image_to_png_bytes,
+    _save_generated_image,
+)
 from services.comic_service import ComicService  # noqa: E402
 from services import image_service as image_service_module  # noqa: E402
 from services.image_service import ImageService  # noqa: E402
@@ -31,6 +37,25 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
 
         data = _generated_image_to_png_bytes(GenAIImageLike())
         self.assertEqual(b"\x89PNG\r\n\x1a\n", data[:8])
+
+    def test_saved_image_is_normalized_to_requested_mobile_canvas(self):
+        source = Image.new("RGB", (640, 480), "red")
+        buffer = io.BytesIO()
+        source.save(buffer, format="PNG")
+
+        image_url = _save_generated_image(
+            buffer.getvalue(),
+            target_size="1024x1536",
+        )
+        output = Path(BACKEND_DIR) / image_url.removeprefix("/backend/")
+        try:
+            with Image.open(output) as normalized:
+                self.assertEqual((1024, 1536), normalized.size)
+                self.assertEqual("PNG", normalized.format)
+        finally:
+            output.unlink(missing_ok=True)
+
+        self.assertEqual("2:3", _aspect_ratio_for_size("1024x1536"))
 
     def test_comic_script_normalization_caps_rows_for_all_row_counts(self):
         service = ComicService()
@@ -65,6 +90,28 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
         self.assertIn("EXACTLY 2 top-level horizontal row band(s)", combined)
         self.assertIn("Use exactly 1 horizontal gutter line(s)", combined)
         self.assertIn("Do NOT invent a third row", combined)
+
+    def test_image_prompt_locks_mobile_portrait_canvas(self):
+        prompt = ImageService._convert_page_to_prompt(
+            {
+                "title": "Mobile page",
+                "canvas": {
+                    "width": 1024,
+                    "height": 1536,
+                    "aspect_ratio": "2:3",
+                },
+                "rows": [
+                    {"height": "auto", "weight": 1, "panels": [{"text": "one"}]},
+                    {"height": "auto", "weight": 1, "panels": [{"text": "two"}]},
+                ],
+            },
+            "reference",
+            "zh",
+        )
+        payload = json.loads(prompt)["image_generation_data"]
+        combined = payload["prompt"] + "\n" + payload["requirements"]
+        self.assertIn("EXACTLY 1024x1536 pixels", combined)
+        self.assertIn("never return a landscape page", combined)
 
     def test_generate_image_enforces_rows_per_page_before_prompting(self):
         captured = {}

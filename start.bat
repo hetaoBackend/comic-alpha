@@ -1,6 +1,8 @@
 @echo off
 REM Comic Generator Startup Script for Windows
 
+cd /d "%~dp0"
+
 echo 🎨 漫画分镜生成器启动脚本
 echo ================================
 
@@ -15,25 +17,25 @@ if errorlevel 1 (
 
 REM Sync dependencies
 echo 📦 检查并安装依赖...
-cd backend
+cd /d "%~dp0backend"
 call uv sync
 if errorlevel 1 (
     echo ❌ 依赖安装失败
-    cd ..
+    cd /d "%~dp0"
     pause
     exit /b 1
 )
-cd ..
+cd /d "%~dp0"
 
 REM Start backend server
 echo 🚀 启动后端服务...
-start "Comic Backend" cmd /k "cd backend && uv run app.py"
+start "Comic Backend" cmd /k "cd /d ""%~dp0backend"" && uv run app.py"
 
 timeout /t 2 /nobreak >nul
 
 REM Start frontend server
 echo 🚀 启动前端服务...
-start "Comic Frontend" cmd /k "python -m http.server 8000"
+start "Comic Frontend" cmd /k "cd /d ""%~dp0"" && python serve_frontend.py"
 
 echo.
 echo ================================

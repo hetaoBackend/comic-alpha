@@ -2,6 +2,9 @@
 
 # Comic Generator Startup Script
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+
 echo "🎨 漫画分镜生成器启动脚本"
 echo "================================"
 
@@ -14,20 +17,18 @@ fi
 
 # Sync dependencies
 echo "📦 检查并安装依赖..."
-cd backend
-uv sync
-if [ $? -ne 0 ]; then
+if ! (cd "$SCRIPT_DIR/backend" && uv sync); then
     echo "❌ 依赖安装失败"
     exit 1
 fi
-cd ..
 
 # Start backend server
 echo "🚀 启动后端服务..."
-cd backend
-uv run app.py &
+(
+    cd "$SCRIPT_DIR/backend" || exit 1
+    exec uv run app.py
+) &
 BACKEND_PID=$!
-cd ..
 
 echo "✅ 后端服务已启动 (PID: $BACKEND_PID)"
 echo "📍 后端地址: http://localhost:5003"
@@ -37,7 +38,7 @@ sleep 2
 
 # Start frontend server
 echo "🚀 启动前端服务..."
-python3 -m http.server 8000 &
+python3 "$SCRIPT_DIR/serve_frontend.py" &
 FRONTEND_PID=$!
 
 echo "✅ 前端服务已启动 (PID: $FRONTEND_PID)"
@@ -50,8 +51,16 @@ echo ""
 echo "按 Ctrl+C 停止所有服务"
 echo "================================"
 
-# Trap Ctrl+C to kill both processes
-trap "echo ''; echo '🛑 正在停止服务...'; kill $BACKEND_PID $FRONTEND_PID; echo '✅ 服务已停止'; exit 0" INT
+cleanup() {
+    trap - INT TERM EXIT
+    echo ""
+    echo "🛑 正在停止服务..."
+    kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+    wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+    echo "✅ 服务已停止"
+}
+
+trap cleanup INT TERM EXIT
 
 # Wait for processes
 wait

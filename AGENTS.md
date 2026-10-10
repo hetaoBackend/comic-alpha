@@ -22,7 +22,7 @@ cd backend && uv run app.py
 
 ```bash
 # Serve frontend (from project root)
-python -m http.server 8000
+python3 serve_frontend.py
 # Then visit http://localhost:8000
 ```
 
@@ -104,6 +104,33 @@ Modular JavaScript with classes exposed on `window`:
 - Frontend stores sessions, configs, and generated images in localStorage
 - Backend saves generated images to `backend/static/images/`
 - Local character references live in `assets/refer_image/<style>/`. Filenames are always valid reference names; optional `characters.json` files add aliases, display names, and role hints.
+- The embedded ComicBrain workspace provides compiled storyboards from
+  `ComicBrain/production/<series-id>/<chapter-id>/storyboard.json`. Set
+  `COMICBRAIN_ROOT` only when the workspace is elsewhere.
+- Every ComicBrain chapter script has a sibling `04-封面描述.md`; the exporter
+  compiles its short title and visual brief into `storyboard.json.cover` for
+  cover generation.
+- ComicBrain imports bypass AI script generation. Human edits are written to the
+  embedded workspace's `review.json` as a draft and must never be treated as an
+  automatic write-back to ComicBrain canon.
+- For any series, character, worldbuilding, plot, storyboard, continuity, or
+  creator-preference work, read `ComicBrain/AGENTS.md` and
+  `ComicBrain/.agents/skills/comic-wiki/SKILL.md` completely before acting.
+- When the creator approves, rejects, corrects, or requests a revision to comic
+  content or collaboration behavior, also read
+  `ComicBrain/.agents/skills/comic-feedback/SKILL.md` completely. This skill
+  classifies the feedback and applies professional judgment before the Wiki
+  skill records evidence or preferences.
+- `ComicBrain/.gitignore` deliberately excludes the private vault, including
+  evidence, canon, preferences, assets, and production projects. Never force-add
+  those paths. Reusable behavior and scaffolding live under `.agents/skills/`;
+  only those skills, `AGENTS.md`, and the production contract are eligible for
+  Git.
+- `serve_frontend.py` is the only supported local frontend server. It binds to
+  loopback and serves only `index.html`, `frontend/`, `assets/`, and the exact
+  generated-image directory `backend/static/images/`; do not replace it with a
+  repository-root static server because that would expose ignored ComicBrain
+  knowledge.
 - Codex image generation applies reference budgets for performance:
   - `CODEX_MAX_PREVIOUS_PAGE_REFERENCES` defaults to `2`
   - `CODEX_MAX_COVER_PAGE_REFERENCES` defaults to `4`

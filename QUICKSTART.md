@@ -18,8 +18,8 @@ start.bat
 或者手动启动后端：
 
 ```bash
-# 进入项目目录
-cd comic_alpha/backend
+# 从仓库根目录进入后端
+cd backend
 
 # 使用 uv 启动后端
 uv run app.py
@@ -35,8 +35,8 @@ uv run app.py
 在浏览器中打开 `index.html` 文件，或者：
 
 ```bash
-# 使用Python启动简单的HTTP服务器
-python -m http.server 8000
+# 从仓库根目录启动仅开放公开资源的本地服务
+python3 serve_frontend.py
 ```
 
 然后访问：`http://localhost:8000`

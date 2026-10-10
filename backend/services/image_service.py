@@ -33,7 +33,13 @@ class ImageService:
     def get_safe_style_description(comic_style: str) -> str:
         """Return image-model-safe wording for IP-adjacent styles."""
         style_descriptions = {
-            "disney": "a bright family animation-inspired style with rounded shapes, expressive faces, smooth motion, and warm colors"
+            "disney": "a bright family animation-inspired style with rounded shapes, expressive faces, smooth motion, and warm colors",
+            "reference": (
+                "the established children's comic visual language shown in the "
+                "locked character and reference images, strictly preserving their "
+                "shapes, materials, palette, and rendering without introducing "
+                "the visual identity of any other franchise"
+            ),
         }
         return style_descriptions.get(comic_style, comic_style)
 
@@ -325,7 +331,8 @@ class ImageService:
         image_quality: str = "medium",
         reasoning_effort: str = "medium",
         rows_per_page: Optional[int] = None,
-        language: str = 'en'
+        language: str = 'en',
+        character_references: Optional[List[Tuple[str, str]]] = None,
     ) -> tuple[Optional[str], str]:
         """
         Generate comic image from page data
@@ -345,6 +352,8 @@ class ImageService:
             reasoning_effort: Codex reasoning effort for image orchestration
             rows_per_page: Optional number of rows to strictly limit (1-5)
             language: Language of the comic content
+            character_references: Server-resolved locked ComicBrain character
+                images as ``(label, absolute_path)`` tuples
 
         Returns:
             Tuple of (image_url, prompt)
@@ -356,21 +365,43 @@ class ImageService:
         if comic_style == "disney":
             page_data = ImageService._sanitize_reference_aliases(page_data, comic_style)
 
-        # Get style-specific character reference images
-        style_references = ImageService.get_style_reference_images(comic_style)
-        style_references = ImageService._select_relevant_reference_images(
-            page_data,
-            style_references,
-            comic_style,
-            fallback_to_all=image_provider != "codex"
-        )
+        # ComicBrain references are authoritative character assets. Never mix
+        # them with the bundled style characters, which may depict unrelated
+        # or protected identities. The selected style still guides rendering.
+        style_references = []
+        if character_references is None:
+            style_references = ImageService.get_style_reference_images(comic_style)
+            style_references = ImageService._select_relevant_reference_images(
+                page_data,
+                style_references,
+                comic_style,
+                fallback_to_all=image_provider != "codex"
+            )
         if image_provider == "codex" and not style_references:
             logger.info("No page-matched style references found for Codex; skipping bundled style references")
         character_info = []
         style_ref_paths = []
+        seen_character_paths = set()
 
         for char_name, img_path in style_references:
             character_info.append((ImageService._reference_label(comic_style, char_name), img_path))
+            style_ref_paths.append(img_path)
+            seen_character_paths.add(os.path.realpath(img_path))
+
+        for character_reference in character_references or []:
+            if (
+                not isinstance(character_reference, (tuple, list))
+                or len(character_reference) != 2
+            ):
+                continue
+            char_name, img_path = character_reference
+            if not isinstance(char_name, str) or not isinstance(img_path, str):
+                continue
+            real_path = os.path.realpath(img_path)
+            if real_path in seen_character_paths:
+                continue
+            seen_character_paths.add(real_path)
+            character_info.append((char_name, img_path))
             style_ref_paths.append(img_path)
 
         safe_style = ImageService.get_safe_style_description(comic_style)
@@ -492,7 +523,8 @@ class ImageService:
                 return generate_social_media_image_core(
                     prompt=prompt,
                     reference_img=refs,
-                    google_api_key=google_api_key
+                    google_api_key=google_api_key,
+                    size=image_size,
                 )
             except Exception as e:
                 last_error = e
@@ -520,7 +552,8 @@ class ImageService:
         reasoning_effort: str = "medium",
         reference_imgs: List[Union[str, Dict]] = None,
         language: str = 'en',
-        custom_requirements: str = ''
+        custom_requirements: str = '',
+        character_references: Optional[List[Tuple[str, str]]] = None,
     ) -> tuple[Optional[str], str]:
         """
         Generate comic cover image
@@ -538,17 +571,42 @@ class ImageService:
             reference_imgs: List of reference image URLs
             language: Language of the comic
             custom_requirements: User's custom cover requirements (optional)
+            character_references: Server-resolved locked ComicBrain character
+                images as ``(label, absolute_path)`` tuples
 
         Returns:
             Tuple of (image_url, prompt)
         """
-        # Get style-specific character reference images
-        style_references = ImageService.get_style_reference_images(comic_style)
+        # ComicBrain references are authoritative character assets. Do not add
+        # bundled style characters when the project supplied locked assets.
+        style_references = (
+            ImageService.get_style_reference_images(comic_style)
+            if character_references is None
+            else []
+        )
         character_info = []
         style_ref_paths = []
+        seen_character_paths = set()
 
         for char_name, img_path in style_references:
             character_info.append((ImageService._reference_label(comic_style, char_name), img_path))
+            style_ref_paths.append(img_path)
+            seen_character_paths.add(os.path.realpath(img_path))
+
+        for character_reference in character_references or []:
+            if (
+                not isinstance(character_reference, (tuple, list))
+                or len(character_reference) != 2
+            ):
+                continue
+            char_name, img_path = character_reference
+            if not isinstance(char_name, str) or not isinstance(img_path, str):
+                continue
+            real_path = os.path.realpath(img_path)
+            if real_path in seen_character_paths:
+                continue
+            seen_character_paths.add(real_path)
+            character_info.append((char_name, img_path))
             style_ref_paths.append(img_path)
 
         safe_style = ImageService.get_safe_style_description(comic_style)
@@ -606,7 +664,8 @@ class ImageService:
             image_url = generate_social_media_image_core(
                 prompt=prompt,
                 reference_img=processed_refs,
-                google_api_key=google_api_key
+                google_api_key=google_api_key,
+                size=image_size,
             )
 
         return image_url, prompt
@@ -665,6 +724,25 @@ class ImageService:
         # Create layout description
         total_rows = len(layout_rows)
         horizontal_gutters = max(0, total_rows - 1)
+        canvas = page_data.get("canvas")
+        canvas = canvas if isinstance(canvas, dict) else {}
+        canvas_width = canvas.get("width")
+        canvas_height = canvas.get("height")
+        canvas_ratio = canvas.get("aspect_ratio")
+        fixed_canvas = (
+            isinstance(canvas_width, int)
+            and isinstance(canvas_height, int)
+            and canvas_width > 0
+            and canvas_height > 0
+        )
+        canvas_description = (
+            f"Final canvas: EXACTLY {canvas_width}x{canvas_height} pixels, "
+            f"{canvas_ratio or f'{canvas_width}:{canvas_height}'} portrait aspect ratio. "
+            "Keep the complete comic upright in this portrait canvas; never rotate it "
+            "and never return a landscape page."
+            if fixed_canvas
+            else "Keep the complete comic upright in the requested output canvas."
+        )
         row_band_description = (
             f"The page must have EXACTLY {total_rows} top-level horizontal row band(s), stacked vertically from top to bottom. "
             f"Use exactly {horizontal_gutters} horizontal gutter line(s) between these row bands. "
@@ -711,6 +789,7 @@ IMPORTANT:
         prompt_content = """Using the style of {comic_style}, create a comic page made of illustration panels. Use the panel details only as visual briefs for what should be drawn.
 
 # Page Layout (MUST FOLLOW EXACTLY):
+{canvas_description}
 {layout_description}
 
 # Content:
@@ -733,6 +812,13 @@ IMPORTANT:
         if single_panel_page:
             single_panel_requirement = "\n- **SINGLE PANEL PAGE (CRITICAL)**: This page must be one full-page illustration panel only. Do NOT split it into multiple rows, multiple panels, comic strips, or repeated views."
 
+        fixed_canvas_requirement = (
+            f"\n- **CANVAS LOCK (CRITICAL)**: Return one upright portrait page at exactly "
+            f"{canvas_width}x{canvas_height} pixels ({canvas_ratio or 'portrait'}). "
+            "Do not rotate the canvas, return landscape artwork, or place a sideways page inside it."
+            if fixed_canvas
+            else ""
+        )
         requirements_content = """- **ROW COUNT LOCK (CRITICAL)**: The final image must contain EXACTLY {total_rows} top-level horizontal row band(s), no more and no fewer. Use exactly {horizontal_gutters} horizontal gutter line(s). Do NOT invent a third row, bonus strip, title strip, caption strip, or extra scene band.
 - **PANEL COUNT LOCK (CRITICAL)**: Follow each row's panel count exactly. If Row 1 has 1 panel, draw 1 panel in the first row. If Row 2 has 2 panels, draw 2 panels side by side in the second row. Do NOT change the number of rows or panels per row.
 - **SKETCH LAYOUT LOCK (CRITICAL)**: If a layout/sketch reference image is provided, copy its row boundaries, panel boundaries, proportions, and margins exactly. Treat the sketch as the binding layout template, not as loose inspiration.
@@ -743,15 +829,16 @@ IMPORTANT:
 - When text is explicitly required by the story, keep it minimal and use {target_lang}.
 - Maintain consistent and uniform margins around the entire comic page.
 - Ensure equal spacing on all sides (top, bottom, left, right) for a professional appearance.
-- Character Consistency: Use the provided reference images as the definitive source for character appearances. Carry over the exact facial features, hair styles, and identical clothing/outfits.{single_panel_requirement}{char_ref_requirement}"""
+- Character Consistency: Use the provided reference images as the definitive source for character appearances. Carry over the exact facial features, hair styles, and identical clothing/outfits.{fixed_canvas_requirement}{single_panel_requirement}{char_ref_requirement}"""
 
         # Negative prompt (all negative constraints)
-        negative_prompt = f"rendered panel descriptions, visual brief text, captions above panels, labels above images, prompt text, title text, row labels, panel labels, panel indices visible, panel numbers shown, extra rows, extra panels, more than {total_rows} top-level rows, extra horizontal dividers, extra strips, extra tiers, title strip, caption strip, split comic strip when one panel is requested, repeated views, speech bubbles unless explicitly required, cluttered dialogue, verbose dialogue, overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, casual clothing replacing a uniform, missing belt, missing badge, wrong eye color, childlike redesign, younger variant, clothing changes without script requirement, layout deviation from sketch, costume changes"
+        negative_prompt = f"landscape page, horizontal canvas, sideways page, rotated page, rendered panel descriptions, visual brief text, captions above panels, labels above images, prompt text, title text, row labels, panel labels, panel indices visible, panel numbers shown, extra rows, extra panels, more than {total_rows} top-level rows, extra horizontal dividers, extra strips, extra tiers, title strip, caption strip, split comic strip when one panel is requested, repeated views, speech bubbles unless explicitly required, cluttered dialogue, verbose dialogue, overly complex panels, complex panel content, inconsistent characters, distorted proportions, dull colors, illegible text, misspelled words, duplicated titles, multiple title locations, uneven margins, mismatched fonts, text corruption, mojibake, garbled characters, blurry text, character appearance changes, incorrect clothing, casual clothing replacing a uniform, missing belt, missing badge, wrong eye color, childlike redesign, younger variant, clothing changes without script requirement, layout deviation from sketch, costume changes"
         
         # Format the content
         formatted_prompt = prompt_content.format(
             comic_style=comic_style,
             title=page_data.get('title', ''),
+            canvas_description=canvas_description,
             layout_description=layout_description,
             panels="\n".join(panels),
             target_lang=target_lang,
@@ -763,6 +850,7 @@ IMPORTANT:
             target_lang=target_lang,
             total_rows=total_rows,
             horizontal_gutters=horizontal_gutters,
+            fixed_canvas_requirement=fixed_canvas_requirement,
             single_panel_requirement=single_panel_requirement,
             char_ref_requirement=char_ref_requirement
         )

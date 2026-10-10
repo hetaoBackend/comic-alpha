@@ -1,0 +1,4 @@
+interface:
+  display_name: "漫画反馈判断"
+  short_description: "判断漫画修改意见，区分事实、质量与偏好，并保留专业判断"
+  default_prompt: "使用 $comic-feedback 判断这次漫画反馈，并决定应如何修改和记录。"

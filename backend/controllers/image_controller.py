@@ -2,11 +2,144 @@
 from flask import Blueprint, request, jsonify, Response
 import logging
 import os
-from controllers.auth_utils import is_loopback_request, validate_reasoning_effort
+from controllers.auth_utils import (
+    is_loopback_request,
+    is_trusted_local_request,
+    validate_reasoning_effort,
+)
+from services.comicbrain_project_service import (
+    ComicBrainConflictError,
+    ComicBrainNotFoundError,
+    ComicBrainPackageError,
+    ComicBrainProjectService,
+    ComicBrainValidationError,
+)
 from services.image_service import ImageService
 
 image_bp = Blueprint('image', __name__)
 logger = logging.getLogger(__name__)
+
+
+def _comicbrain_image_size(project, fallback):
+    """Use the server-owned production size for ComicBrain output."""
+    if not isinstance(project, dict):
+        return fallback
+    settings = project.get("settings")
+    settings = settings if isinstance(settings, dict) else {}
+    image_size = settings.get("image_size")
+    if (
+        isinstance(image_size, str)
+        and image_size in {"1024x1024", "1024x1536", "1536x1024"}
+    ):
+        return image_size
+    return fallback
+
+
+def _load_comicbrain_image_context(data, selection=None, use_cover_selection=False):
+    """Resolve server-owned ComicBrain data without accepting browser paths."""
+    source = data.get("comicbrain_source")
+    if source is None:
+        return None, None, None
+    if not is_trusted_local_request():
+        return None, None, (
+            jsonify(
+                {
+                    "error": (
+                        "ComicBrain projects require a localhost connection "
+                        "and a localhost browser origin"
+                    )
+                }
+            ),
+            403,
+        )
+    if not isinstance(source, dict):
+        return None, None, (
+            jsonify({"error": "comicbrain_source must be an object"}),
+            400,
+        )
+
+    try:
+        series_id = source.get("series_id")
+        chapter_id = source.get("chapter_id")
+        project = ComicBrainProjectService.get_project(series_id, chapter_id)
+        ComicBrainProjectService.require_matching_revision(
+            project,
+            submitted_snapshot_hash=source.get("snapshot_hash"),
+            submitted_source_hash=source.get("source_hash"),
+        )
+        if use_cover_selection:
+            cover = project.get("cover")
+            cover = cover if isinstance(cover, dict) else {}
+            selection = {
+                "title": cover.get("title") or project.get("title"),
+                "brief": (
+                    cover.get("brief")
+                    or cover.get("visual_brief")
+                    or cover.get("prompt")
+                    or cover.get("description")
+                ),
+                "custom_requirements": data.get("custom_requirements"),
+            }
+        references = ComicBrainProjectService.resolve_character_references(
+            series_id,
+            chapter_id,
+            selection=selection,
+            project=project,
+        )
+        return references, project, None
+    except ComicBrainConflictError as error:
+        return None, None, (jsonify({"error": str(error)}), 409)
+    except ComicBrainValidationError as error:
+        return None, None, (jsonify({"error": str(error)}), 400)
+    except ComicBrainNotFoundError as error:
+        return None, None, (jsonify({"error": str(error)}), 404)
+    except ComicBrainPackageError as error:
+        return None, None, (jsonify({"error": str(error)}), 422)
+
+
+def _merge_comicbrain_cover_requirements(project, custom_requirements):
+    """Add a package's cover brief while preserving caller requirements."""
+    if not isinstance(project, dict):
+        return custom_requirements
+
+    cover = project.get("cover")
+    cover = cover if isinstance(cover, dict) else {}
+    source = project.get("source")
+    source = source if isinstance(source, dict) else {}
+    title = (
+        cover.get("title")
+        or project.get("title")
+        or source.get("chapter_title")
+        or source.get("title")
+    )
+    brief = (
+        cover.get("brief")
+        or cover.get("visual_brief")
+        or cover.get("prompt")
+        or cover.get("description")
+    )
+
+    existing_requirements = (
+        custom_requirements.strip()
+        if isinstance(custom_requirements, str)
+        else ""
+    )
+    requirements = []
+    if (
+        isinstance(title, str)
+        and title.strip()
+        and title.strip() not in existing_requirements
+    ):
+        requirements.append(f"ComicBrain cover title: {title.strip()}")
+    if (
+        isinstance(brief, str)
+        and brief.strip()
+        and brief.strip() not in existing_requirements
+    ):
+        requirements.append(f"ComicBrain cover brief: {brief.strip()}")
+    if existing_requirements:
+        requirements.append(existing_requirements)
+    return "\n".join(requirements)
 
 
 @image_bp.route('/api/generate-image', methods=['POST'])
@@ -19,6 +152,12 @@ def generate_comic_image():
         "page_data": {...},  # comic page data
         "reference_img": "url" or ["url1", "url2"],  # optional reference image(s)
         "comic_style": "doraemon",  # optional comic style
+        "comicbrain_source": {  # optional, IDs only; no browser paths
+            "series_id": "series-one",
+            "chapter_id": "ch001",
+            "snapshot_hash": "current-storyboard-snapshot-hash",
+            "source_hash": "current-storyboard-source-hash"
+        },
         "image_provider": "google", "openai", or "codex",
         "google_api_key": "your-google-api-key",
         "api_key": "your-openai-api-key"
@@ -33,6 +172,13 @@ def generate_comic_image():
         page_data = data.get('page_data')
         if not page_data:
             return jsonify({"error": "Page data is required"}), 400
+
+        character_references, comicbrain_project, comicbrain_error = _load_comicbrain_image_context(
+            data,
+            selection=page_data,
+        )
+        if comicbrain_error:
+            return comicbrain_error
         
         image_provider = data.get('image_provider', 'google')
         if image_provider not in ['google', 'openai', 'codex']:
@@ -60,6 +206,7 @@ def generate_comic_image():
         default_image_model = 'gemini-3.1-flash-image-preview' if image_provider == 'google' else 'gpt-image-2'
         image_model = data.get('image_model', default_image_model)
         image_size = data.get('image_size', '1024x1536')
+        image_size = _comicbrain_image_size(comicbrain_project, image_size)
         image_quality = data.get('image_quality', 'medium')
 
         logger.info(
@@ -90,16 +237,44 @@ def generate_comic_image():
             image_quality=image_quality,
             reasoning_effort=reasoning_effort,
             rows_per_page=rows_per_page,
-            language=language
+            language=language,
+            character_references=character_references,
         )
         
         if not image_url:
             return jsonify({"error": "Image generation failed"}), 500
-        
+
+        render_record = None
+        comicbrain_render = data.get("comicbrain_render")
+        comicbrain_source = data.get("comicbrain_source")
+        if (
+            comicbrain_project is not None
+            and isinstance(comicbrain_source, dict)
+            and comicbrain_render is not None
+        ):
+            try:
+                render_record = ComicBrainProjectService.record_page_render(
+                    comicbrain_source.get("series_id"),
+                    comicbrain_source.get("chapter_id"),
+                    comicbrain_render,
+                    image_url,
+                    comicbrain_project,
+                )
+            except (
+                ComicBrainConflictError,
+                ComicBrainValidationError,
+                ComicBrainPackageError,
+            ) as error:
+                logger.warning(
+                    "Generated image succeeded but render manifest was not updated: %s",
+                    error,
+                )
+
         return jsonify({
             "success": True,
             "image_url": image_url,
-            "prompt": prompt
+            "prompt": prompt,
+            "comicbrain_render": render_record,
         })
         
     except Exception as e:
@@ -117,14 +292,26 @@ def generate_comic_cover_endpoint():
         "image_provider": "google", "openai", or "codex",
         "google_api_key": "your-google-api-key",
         "api_key": "your-openai-api-key",
-        "reference_imgs": [...]  # optional reference images
+        "reference_imgs": [...],  # optional reference images
+        "comicbrain_source": {  # optional, also supplies cover brief and refs
+            "series_id": "series-one",
+            "chapter_id": "ch001",
+            "snapshot_hash": "current-storyboard-snapshot-hash",
+            "source_hash": "current-storyboard-source-hash"
+        }
     }
     """
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "No JSON data provided"}), 400
-            
+
+        character_references, comicbrain_project, comicbrain_error = (
+            _load_comicbrain_image_context(data, use_cover_selection=True)
+        )
+        if comicbrain_error:
+            return comicbrain_error
+
         image_provider = data.get('image_provider', 'google')
         if image_provider not in ['google', 'openai', 'codex']:
             return jsonify({"error": "Image provider must be 'google', 'openai', or 'codex'"}), 400
@@ -145,10 +332,15 @@ def generate_comic_cover_endpoint():
         reference_imgs = data.get('reference_imgs')
         language = data.get('language', 'en')
         custom_requirements = data.get('custom_requirements', '')
+        custom_requirements = _merge_comicbrain_cover_requirements(
+            comicbrain_project,
+            custom_requirements,
+        )
         openai_base_url = data.get('base_url', 'https://api.openai.com/v1')
         default_image_model = 'gemini-3.1-flash-image-preview' if image_provider == 'google' else 'gpt-image-2'
         image_model = data.get('image_model', default_image_model)
         image_size = data.get('image_size', '1024x1536')
+        image_size = _comicbrain_image_size(comicbrain_project, image_size)
         image_quality = data.get('image_quality', 'medium')
 
         logger.info(
@@ -176,7 +368,8 @@ def generate_comic_cover_endpoint():
             reasoning_effort=reasoning_effort,
             reference_imgs=reference_imgs,
             language=language,
-            custom_requirements=custom_requirements
+            custom_requirements=custom_requirements,
+            character_references=character_references,
         )
         
         if not image_url:

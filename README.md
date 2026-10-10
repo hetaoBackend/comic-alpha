@@ -93,7 +93,9 @@ comic_alpha/
 │       ├── sessionManager.js # Session management module
 │       ├── exporter.js       # Image export module
 │       └── app.js            # Main controller
+├── ComicBrain/                # Embedded comic knowledge and production workspace
 ├── index.html                 # Main page
+├── serve_frontend.py          # Local allowlisted frontend server
 ├── start.sh                   # Startup script for Linux/macOS
 └── start.bat                  # Startup script for Windows
 ```
@@ -152,11 +154,41 @@ The backend service will start at `http://localhost:5003`.
 Use a local server:
 
 ```bash
-# Start a simple HTTP server using Python
-python -m http.server 8000
+# Expose only the public UI assets and generated images on loopback
+python3 serve_frontend.py
 ```
 
 Then visit `http://localhost:8000`
+
+## Importing ComicBrain Storyboards
+
+ComicBrain is embedded in comic-alpha, and the backend discovers its production storyboards automatically:
+
+```text
+comic-alpha/
+├── ComicBrain/
+│   └── production/
+├── backend/
+└── frontend/
+```
+
+After confirming a chapter script in ComicBrain, export its production snapshot from the comic-alpha root:
+
+```bash
+python3 ComicBrain/.agents/skills/comic-wiki/scripts/export_comic_alpha.py \
+  --series-id <series-id> \
+  --chapter-id <chapter-id>
+```
+
+Start comic-alpha, choose the chapter in the **ComicBrain Storyboards** section, and click **Load Storyboard**. This path skips a second AI script-generation pass and goes directly to human review and image generation. Per-page row counts are preserved, and confirmed ComicBrain character references are used for page and cover generation.
+
+Edits are saved immediately in the browser and written to `ComicBrain/production/<series-id>/<chapter-id>/review.json`. A review is always a production draft and never updates ComicBrain canon automatically. Changes to the source script, layout, or canonical reference assets change the complete production snapshot hash, so an old review cannot override the new storyboard. Page-image versions are also persisted in `renders/manifest.json`. When **Load Storyboard** is clicked again—even in a different browser—unchanged pages recover their images, while changed or new pages become pending and can be generated with **Resume**.
+
+The default workspace is `./ComicBrain` inside the repository. Set `COMICBRAIN_ROOT` only when intentionally using an external workspace.
+
+`ComicBrain/.gitignore` excludes concrete plots, characters, series assets, creator preferences, raw evidence, and chapter production output by default. Git sees only reusable Agent rules, skills, templates, and the production contract. Never force-add the private knowledge paths.
+
+Open `comic-alpha/ComicBrain` as the Obsidian vault. In Codex, open the `comic-alpha` repository root so the top-level Agent rules can route comic knowledge tasks into the embedded ComicBrain workspace.
 
 ## Usage Guide
 
@@ -476,8 +508,9 @@ A: Make sure the html2canvas library is loaded, and check the browser console fo
 ### Q: How to deploy to production?
 A: 
 1. Deploy the backend using Gunicorn or uWSGI
-2. Host the frontend using Nginx or another web server
+2. Host only `index.html`, `frontend/`, `assets/`, and `backend/static/images/`; never use the repository root as the web root
 3. Configure CORS to allow the frontend domain to access the backend
+4. Ensure `ComicBrain/`, `.git/`, and environment files are unreachable from the web
 
 ## License
 
