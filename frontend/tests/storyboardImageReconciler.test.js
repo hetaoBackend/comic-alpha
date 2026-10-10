@@ -237,3 +237,30 @@ test('restores server manifest images in a browser with no local session images'
         '/backend/static/images/page-2-v2.png'
     );
 });
+
+test('does not restore earlier character-reference renders after one new page is made', () => {
+    const pages = [page('IMG-01', '冲啊'), page('IMG-02', '还是晚了')];
+    const fingerprint = StoryboardImageReconciler.pageFingerprint(pages[0]);
+    const manifest = {
+        source: { snapshot_hash: 'new-snapshot' },
+        pages: [
+            {
+                page_id: 'IMG-01', page_index: 0, current_version: 1,
+                versions: [
+                    { image_url: '/backend/static/images/old.png', snapshot_hash: 'old-snapshot' },
+                    { image_url: '/backend/static/images/new.png', snapshot_hash: 'new-snapshot', page_script_fingerprint: fingerprint }
+                ]
+            },
+            {
+                page_id: 'IMG-02', page_index: 1, current_version: 0,
+                versions: [{ image_url: '/backend/static/images/still-old.png', snapshot_hash: 'old-snapshot' }]
+            }
+        ]
+    };
+    const restored = StoryboardImageReconciler.imagesFromRenderManifest(
+        manifest, pages, 'new-snapshot'
+    );
+    assert.deepEqual(Object.keys(restored), ['0']);
+    assert.equal(restored[0].versions.length, 1);
+    assert.equal(restored[0].versions[0].imageUrl, '/backend/static/images/new.png');
+});

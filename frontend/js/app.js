@@ -2617,21 +2617,31 @@ class UIController {
 
             const currentSession = this.sessionManager.getCurrentSession();
             const existingTargetSession = targetSession;
-            const localImages = existingTargetSession
-                ? (existingTargetSession.generatedImages || {})
-                : {};
-            const persistedImages = StoryboardImageReconciler.imagesFromRenderManifest(
-                response.renders,
-                pages
-            );
-            const existingImages = {
-                ...persistedImages,
-                ...localImages
-            };
             const previousSource = existingTargetSession
                 && existingTargetSession.comicBrainProject
                 && existingTargetSession.comicBrainProject.metadata
                 && existingTargetSession.comicBrainProject.metadata.source;
+            const previousSnapshotHash = previousSource && previousSource.snapshot_hash;
+            const renderSnapshotHash = response.renders
+                && response.renders.source
+                && response.renders.source.snapshot_hash;
+            // A changed ComicBrain snapshot can replace character references
+            // without changing any panel text. Old renders must be generated again.
+            const localImages = existingTargetSession
+                && previousSnapshotHash === storyboardSnapshotHash
+                ? (existingTargetSession.generatedImages || {})
+                : {};
+            const persistedImages = renderSnapshotHash === storyboardSnapshotHash
+                ? StoryboardImageReconciler.imagesFromRenderManifest(
+                    response.renders,
+                    pages,
+                    storyboardSnapshotHash
+                )
+                : {};
+            const existingImages = {
+                ...persistedImages,
+                ...localImages
+            };
             const previousScriptHash = previousSource && previousSource.source_hash;
             const scriptSourceUnchanged = !!storyboardSourceHash
                 && !!previousScriptHash

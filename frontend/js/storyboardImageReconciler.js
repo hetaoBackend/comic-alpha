@@ -160,11 +160,14 @@ class StoryboardImageReconciler {
      * Convert the server-owned ComicBrain render manifest into the same image
      * structure used by browser sessions.
      */
-    static imagesFromRenderManifest(manifest, pages) {
+    static imagesFromRenderManifest(manifest, pages, snapshotHash = null) {
         const pageList = Array.isArray(pages) ? pages : [];
         const records = manifest && Array.isArray(manifest.pages)
             ? manifest.pages
             : [];
+        const manifestSnapshotHash = manifest && manifest.source
+            ? manifest.source.snapshot_hash
+            : null;
         const pageIndexById = new Map();
         pageList.forEach((page, index) => {
             if (page && typeof page.id === 'string' && page.id) {
@@ -186,15 +189,20 @@ class StoryboardImageReconciler {
                 return images;
             }
 
-            const versions = Array.isArray(record.versions)
+            const retainedVersions = Array.isArray(record.versions)
                 ? record.versions
-                    .filter(version => (
+                    .map((version, sourceIndex) => ({ version, sourceIndex }))
+                    .filter(({ version }) => (
                         version
                         && typeof version === 'object'
                         && typeof version.image_url === 'string'
                         && version.image_url
+                        && (!snapshotHash || (
+                            version.snapshot_hash || manifestSnapshotHash
+                        ) === snapshotHash)
                     ))
-                    .map((version, index) => ({
+                : [];
+            const versions = retainedVersions.map(({ version }, index) => ({
                         imageUrl: version.image_url,
                         timestamp: Date.parse(version.created_at) || 0,
                         version: index + 1,
@@ -204,15 +212,15 @@ class StoryboardImageReconciler {
                             || null
                         ),
                         pageScriptId: version.page_script_id || record.page_id || null
-                    }))
-                : [];
+                    }));
             if (versions.length === 0) return images;
 
             const requestedVersion = Number(record.current_version);
-            const currentVersion = Number.isInteger(requestedVersion)
-                && requestedVersion >= 0
-                && requestedVersion < versions.length
-                ? requestedVersion
+            const selectedVersion = retainedVersions.findIndex(
+                item => item.sourceIndex === requestedVersion
+            );
+            const currentVersion = selectedVersion >= 0
+                ? selectedVersion
                 : versions.length - 1;
             images[targetIndex] = {
                 pageIndex: targetIndex,

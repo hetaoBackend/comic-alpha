@@ -299,6 +299,22 @@ class ComicBrainProjectService:
                 project,
             )
             pages = manifest["pages"]
+            prior_source = manifest.get("source")
+            prior_snapshot_hash = (
+                prior_source.get("snapshot_hash")
+                if isinstance(prior_source, dict)
+                else None
+            )
+            current_snapshot_hash = project_source.get("snapshot_hash")
+            if isinstance(prior_snapshot_hash, str):
+                for saved_page in pages:
+                    if not isinstance(saved_page, dict):
+                        continue
+                    for saved_version in saved_page.get("versions", []):
+                        if isinstance(saved_version, dict):
+                            saved_version.setdefault(
+                                "snapshot_hash", prior_snapshot_hash
+                            )
             page_record = next(
                 (
                     item
@@ -336,9 +352,12 @@ class ComicBrainProjectService:
                         "created_at": now,
                         "page_script_fingerprint": fingerprint,
                         "page_script_id": page_id,
+                        "snapshot_hash": current_snapshot_hash,
                     }
                 )
                 existing_version_index = len(versions) - 1
+            else:
+                versions[existing_version_index]["snapshot_hash"] = current_snapshot_hash
 
             page_record.update(
                 {

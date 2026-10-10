@@ -470,6 +470,30 @@ class ComicBrainBridgeTest(unittest.TestCase):
         self.assertEqual(2, len(manifest["pages"][0]["versions"]))
         self.assertEqual([], list((self.project_dir / "renders").glob("*.tmp")))
 
+    def test_render_manifest_keeps_each_versions_reference_snapshot(self):
+        payload = {
+            "page_index": 0,
+            "page_id": "page-1",
+            "page_title": "Page 1",
+            "page_script_fingerprint": "page-v1:10:12345678:90abcdef",
+        }
+        ComicBrainProjectService.record_page_render(
+            "series-one", "ch001", payload,
+            "/backend/static/images/old.png", self.storyboard,
+        )
+        changed_storyboard = json.loads(json.dumps(self.storyboard))
+        changed_storyboard["source"]["snapshot_hash"] = "snapshot-v2"
+        ComicBrainProjectService.record_page_render(
+            "series-one", "ch001", payload,
+            "/backend/static/images/new.png", changed_storyboard,
+        )
+        manifest = ComicBrainProjectService.get_render_manifest(
+            "series-one", "ch001", changed_storyboard,
+        )
+        versions = manifest["pages"][0]["versions"]
+        self.assertEqual("snapshot-v1", versions[0]["snapshot_hash"])
+        self.assertEqual("snapshot-v2", versions[1]["snapshot_hash"])
+
     def test_generate_cover_merges_package_brief_and_character_references(self):
         cover_brief = self.storyboard["cover"]["brief"]
         with patch(
