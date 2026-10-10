@@ -6,6 +6,7 @@ import requests
 import json
 import copy
 from typing import List, Dict, Any, Optional, Union, Tuple
+from PIL import Image, ImageOps
 from comic_generator import generate_codex_image_core, generate_openai_image_core, generate_social_media_image_core
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,16 @@ class ImageService:
             "Disney": "family animation",
         }
     }
+    CODEX_BRIGHTNESS_REQUIREMENTS = """- **BRIGHTNESS / EXPOSURE LOCK (CRITICAL)**: Use bright high-key comic lighting by default, with clean illuminated midtones, open and readable shadows, clearly lit faces, and a light overall page impression. Keep white page margins and gutters neutral white.
+- **REFERENCE ROLE LOCK (CRITICAL)**: Character references define identity, anatomy, outfit, and local object colors. The sketch defines layout. Previous pages define continuity. Their exposure, background darkness, cinematic color grade, vignette, and shadow density are NOT binding and must not be copied.
+- Use broad soft daylight or soft studio fill for normal scenes. Prefer clear, lively color separation over dramatic movie-still lighting.
+- If the story explicitly requires sunset, night, a cave, or another dark setting, preserve that setting but use motivated fill light or rim light so faces, actions, costumes, and backgrounds remain easy to read. Do not turn the whole panel into near-black shadow."""
+    CODEX_BRIGHTNESS_NEGATIVE = (
+        "underexposure, dim overall image, muddy midtones, crushed blacks, blocked shadows, "
+        "large near-black areas, excessive chiaroscuro, heavy vignette, gloomy cinematic color grade, "
+        "dark movie still, murky background, poorly lit face"
+    )
+    CODEX_COVER_IMAGE_SIZE = "1024x1536"
 
     @staticmethod
     def get_safe_style_description(comic_style: str) -> str:
@@ -110,6 +121,183 @@ class ImageService:
     @staticmethod
     def _codex_max_cover_page_references() -> int:
         return ImageService._env_int("CODEX_MAX_COVER_PAGE_REFERENCES", 4)
+
+    @staticmethod
+    def _add_codex_brightness_guidance(prompt: str) -> str:
+        """Add Codex-specific tone guidance without changing other providers' prompts."""
+        try:
+            payload = json.loads(prompt)
+        except (TypeError, json.JSONDecodeError):
+            # Cover prompts are intentionally plain text rather than structured JSON.
+            return (
+                f"{prompt}\n\n# Codex Rendering Requirements\n"
+                f"{ImageService.CODEX_BRIGHTNESS_REQUIREMENTS}\n"
+                f"Avoid: {ImageService.CODEX_BRIGHTNESS_NEGATIVE}"
+            )
+
+        try:
+            generation_data = payload["image_generation_data"]
+            requirements = generation_data.get("requirements", "").strip()
+            negative_prompt = generation_data.get("negative_prompt", "").strip()
+            generation_data["requirements"] = (
+                f"{requirements}\n{ImageService.CODEX_BRIGHTNESS_REQUIREMENTS}"
+            ).strip()
+            generation_data["negative_prompt"] = ", ".join(
+                part for part in [negative_prompt, ImageService.CODEX_BRIGHTNESS_NEGATIVE]
+                if part
+            )
+            return json.dumps(payload, ensure_ascii=False)
+        except (KeyError, TypeError):
+            logger.warning("Could not parse structured image prompt; appending Codex brightness guidance")
+            return (
+                f"{prompt}\n\n# Codex Rendering Requirements\n"
+                f"{ImageService.CODEX_BRIGHTNESS_REQUIREMENTS}\n"
+                f"Avoid: {ImageService.CODEX_BRIGHTNESS_NEGATIVE}"
+            )
+
+    @staticmethod
+    def _add_codex_canvas_guidance(prompt: str, image_size: str) -> str:
+        """Make an explicit image size binding in both structured and cover prompts."""
+        try:
+            width_text, height_text = image_size.lower().split("x")
+            width, height = int(width_text), int(height_text)
+            if width <= 0 or height <= 0:
+                return prompt
+        except (AttributeError, TypeError, ValueError):
+            return prompt
+
+        orientation = "portrait" if height > width else "landscape" if width > height else "square"
+        requirement = (
+            f"- **OUTPUT CANVAS LOCK (CRITICAL)**: The final image file must be exactly {width}x{height} "
+            f"pixels in {orientation} orientation (aspect ratio {width / height:.4f}). Compose every "
+            "row and panel inside that fixed canvas. Reference-image dimensions are not binding. "
+            f"Do not rotate the page or return any canvas other than {width}x{height}."
+        )
+
+        try:
+            payload = json.loads(prompt)
+            generation_data = payload["image_generation_data"]
+            requirements = generation_data.get("requirements", "").strip()
+            generation_data["requirements"] = f"{requirements}\n{requirement}".strip()
+            return json.dumps(payload, ensure_ascii=False)
+        except (KeyError, TypeError, json.JSONDecodeError):
+            return f"{prompt}\n\n# Codex Canvas Requirement\n{requirement}"
+
+    @staticmethod
+    def _lock_codex_cover_image_size(image_size: str) -> str:
+        """Keep Codex covers on a conventional 2:3 portrait canvas."""
+        locked_size = ImageService.CODEX_COVER_IMAGE_SIZE
+        if image_size != locked_size:
+            logger.info(
+                "Locked Codex cover image size from %s to %s",
+                image_size,
+                locked_size,
+            )
+        return locked_size
+
+    @staticmethod
+    def _generated_page_image_dimensions(image_url: Any) -> Optional[Tuple[int, int]]:
+        """Read dimensions for a generated page URL without fetching remote input."""
+        prefix = "/backend/static/images/"
+        if not isinstance(image_url, str) or not image_url.startswith(prefix):
+            return None
+
+        filename = image_url[len(prefix):].split("?", 1)[0]
+        if not filename or os.path.basename(filename) != filename:
+            return None
+
+        image_path = os.path.join(
+            ImageService._project_root(), "backend", "static", "images", filename
+        )
+        try:
+            with Image.open(image_path) as source:
+                return ImageOps.exif_transpose(source).size
+        except (OSError, ValueError) as e:
+            logger.warning("Could not inspect previous generated page %s: %s", filename, e)
+            return None
+
+    @staticmethod
+    def _lock_image_size_to_previous_pages(
+        image_size: str,
+        previous_pages: Optional[List[Any]],
+    ) -> str:
+        """Keep a comic series in the orientation established by its previous pages.
+
+        The global image-size setting can be changed while an existing comic session
+        is open. In that case it must not silently turn a later portrait page into a
+        landscape page (or vice versa). The majority wins so one historical bad page
+        cannot propagate. Only orientation is locked here; tiny provider rounding
+        differences remain acceptable.
+        """
+        if not previous_pages or not isinstance(image_size, str):
+            return image_size
+
+        try:
+            width_text, height_text = image_size.lower().split("x")
+            width, height = int(width_text), int(height_text)
+            if width <= 0 or height <= 0:
+                return image_size
+        except (AttributeError, TypeError, ValueError):
+            return image_size
+
+        previous_sizes = []
+        for previous_page in previous_pages:
+            previous_size = None
+            if isinstance(previous_page, dict):
+                previous_size = ImageService._generated_page_image_dimensions(
+                    previous_page.get("imageUrl")
+                )
+            elif isinstance(previous_page, str):
+                previous_size = ImageService._generated_page_image_dimensions(previous_page)
+            if previous_size:
+                previous_sizes.append(previous_size)
+
+        if not previous_sizes:
+            return image_size
+
+        orientations = [
+            "portrait" if previous_height > previous_width
+            else "landscape" if previous_width > previous_height
+            else "square"
+            for previous_width, previous_height in previous_sizes
+        ]
+        orientation_counts = {
+            orientation: orientations.count(orientation)
+            for orientation in ("portrait", "landscape", "square")
+        }
+        # Stable tie-breaking keeps the orientation established by the first page.
+        previous_orientation = max(
+            orientations,
+            key=lambda orientation: (
+                orientation_counts[orientation],
+                -orientations.index(orientation),
+            ),
+        )
+        requested_orientation = (
+            "portrait" if height > width
+            else "landscape" if width > height
+            else "square"
+        )
+        if previous_orientation == requested_orientation or previous_orientation == "square":
+            return image_size
+
+        if previous_orientation == "portrait":
+            locked_size = f"{min(width, height)}x{max(width, height)}"
+            if width == height:
+                locked_size = "1024x1536"
+        else:
+            locked_size = f"{max(width, height)}x{min(width, height)}"
+            if width == height:
+                locked_size = "1536x1024"
+
+        logger.warning(
+            "Locked comic image size from %s to %s to match previous-page orientation %s (%s)",
+            image_size,
+            locked_size,
+            previous_orientation,
+            orientation_counts,
+        )
+        return locked_size
 
     @staticmethod
     def _reference_dir(comic_style: str) -> str:
@@ -362,6 +550,11 @@ class ImageService:
         rows_per_page = ImageService._coerce_rows_per_page(rows_per_page)
         page_data = ImageService._enforce_rows_per_page(page_data, rows_per_page)
 
+        if image_provider == "codex":
+            image_size = ImageService._lock_image_size_to_previous_pages(
+                image_size, extra_body
+            )
+
         if comic_style == "disney":
             page_data = ImageService._sanitize_reference_aliases(page_data, comic_style)
 
@@ -410,6 +603,9 @@ class ImageService:
         prompt = ImageService._convert_page_to_prompt(
             page_data, safe_style, language, character_info
         )
+        if image_provider == "codex":
+            prompt = ImageService._add_codex_brightness_guidance(prompt)
+            prompt = ImageService._add_codex_canvas_guidance(prompt, image_size)
 
         # Prepare reference images (can be single image or array)
         reference_images = []
@@ -577,6 +773,9 @@ class ImageService:
         Returns:
             Tuple of (image_url, prompt)
         """
+        if image_provider == "codex":
+            image_size = ImageService._lock_codex_cover_image_size(image_size)
+
         # ComicBrain references are authoritative character assets. Do not add
         # bundled style characters when the project supplied locked assets.
         style_references = (
@@ -615,6 +814,9 @@ class ImageService:
         prompt = ImageService._create_cover_prompt(
             safe_style, language, custom_requirements, character_info
         )
+        if image_provider == "codex":
+            prompt = ImageService._add_codex_brightness_guidance(prompt)
+            prompt = ImageService._add_codex_canvas_guidance(prompt, image_size)
 
         # Prepare reference images list
         processed_refs = []

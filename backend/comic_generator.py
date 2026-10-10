@@ -20,7 +20,14 @@ load_dotenv()
 
 CODEX_RESPONSES_BASE_URL = "https://chatgpt.com/backend-api/codex"
 CODEX_IMAGE_RESPONSES_MODEL = "gpt-5.5"
-CODEX_IMAGE_INSTRUCTIONS = "You are an image generation assistant."
+CODEX_IMAGE_INSTRUCTIONS = """You are an image generation assistant for illustrated comic pages and covers.
+Follow the user's layout, character, and rendering requirements precisely. Unless the scene explicitly
+requires low-key lighting, render with bright high-key exposure, clean illuminated midtones, readable
+shadow detail, and vivid colors. Treat supplied character and previous-page images as identity,
+continuity, and layout references; do not copy an underexposed reference's dark color grade, crushed
+blacks, vignette, or gloomy lighting. Even explicit night scenes must keep faces and story actions
+clearly readable with motivated fill or rim light. The image tool's requested canvas dimensions,
+orientation, and aspect ratio are binding; never let a reference image override them."""
 
 
 def _env_int(name: str, default: int) -> int:
@@ -110,6 +117,27 @@ def _parse_target_size(size: Optional[str]) -> Optional[tuple[int, int]]:
     return width, height
 
 
+class GeneratedImageAspectRatioError(ValueError):
+    """Raised when an image provider ignores the requested output aspect ratio."""
+
+
+def _requested_image_dimensions(size: Optional[str]) -> Optional[tuple[int, int]]:
+    """Parse an explicit WIDTHxHEIGHT image size; return None for auto/invalid values."""
+    if not isinstance(size, str) or size.lower() == "auto":
+        return None
+
+    parts = size.lower().split("x")
+    if len(parts) != 2:
+        return None
+    try:
+        width, height = (int(part) for part in parts)
+    except ValueError:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
 def _aspect_ratio_for_size(size: Optional[str], default: str = "9:16") -> str:
     target = _parse_target_size(size)
     if not target:
@@ -117,6 +145,38 @@ def _aspect_ratio_for_size(size: Optional[str], default: str = "9:16") -> str:
     width, height = target
     divisor = math.gcd(width, height)
     return f"{width // divisor}:{height // divisor}"
+
+
+def _normalize_generated_image_size(
+        image_bytes: bytes,
+        requested_size: Optional[str],
+        aspect_ratio_tolerance: float = 0.02
+    ) -> bytes:
+    """Reject a visibly wrong aspect ratio and accept harmless pixel rounding.
+
+    A small tolerance accepts provider outputs such as 1023x1537 for a 1024x1536
+    request without resizing them. Gross mismatches are retried instead of being
+    cropped or distorted.
+    """
+    target_size = _requested_image_dimensions(requested_size)
+    if target_size is None:
+        return image_bytes
+
+    with Image.open(io.BytesIO(image_bytes)) as source:
+        image = ImageOps.exif_transpose(source)
+        actual_size = image.size
+        target_ratio = target_size[0] / target_size[1]
+        actual_ratio = actual_size[0] / actual_size[1]
+        ratio_error = abs(actual_ratio - target_ratio) / target_ratio
+
+        if ratio_error > aspect_ratio_tolerance:
+            raise GeneratedImageAspectRatioError(
+                f"Generated image has size {actual_size[0]}x{actual_size[1]} "
+                f"(ratio {actual_ratio:.4f}), but {requested_size} "
+                f"(ratio {target_ratio:.4f}) was requested"
+            )
+
+        return image_bytes
 
 
 def _collect_openai_reference_images(
@@ -420,12 +480,20 @@ def generate_codex_image_core(
             response = requests.post(url, headers=headers, json=body, timeout=180)
             _raise_for_codex_status(response, "Codex image generation")
             image_bytes = _extract_codex_image_from_sse(response.text)
-            return _save_generated_image(image_bytes, target_size=size)
+            image_bytes = _normalize_generated_image_size(image_bytes, size)
+            return _save_generated_image(image_bytes)
         except Exception as e:
             last_exception = e
             logger.warning(f"Codex image attempt {attempt + 1}/{max_retries} failed: {str(e)}")
 
             if attempt < max_retries - 1:
+                if isinstance(e, GeneratedImageAspectRatioError):
+                    content[0]["text"] = (
+                        f"{prompt}\n\nCRITICAL RETRY CORRECTION: The previous output used the wrong "
+                        f"canvas. Return exactly {size}; preserve that orientation and aspect ratio. "
+                        "Recompose the panels inside this canvas. Do not rotate the page, switch to "
+                        "landscape, or make a taller/narrower page."
+                    )
                 wait_time = retry_delay * (2 ** attempt)
                 logger.info(f"Retrying Codex image generation in {wait_time} seconds...")
                 time.sleep(wait_time)
