@@ -1,3670 +1,1641 @@
-/**
- * UI Controller Module - Main application controller
- */
-
+/* ComicPerfect console: route lifecycle, async jobs and deliberate canon confirmation. */
 class UIController {
-    constructor() {
-        this.pageManager = new PageManager();
-        this.renderer = new ComicRenderer('comic-page');
-        this.isGenerating = false;
-        this.isViewingImage = false;
-        this.isLoadingSession = false;
-        this.generatedPagesImages = {}; // Store generated images by page index for reference
-        this.comicBrainProjects = [];
-        this.comicBrainReviewTimers = new Map();
-        this.comicBrainReviewRevisions = new Map();
-        this.comicBrainReviewQueues = new Map();
-
-        // Initialize reference image state
-        this.referenceImage = null;
-        this.referenceImagePersistenceMaxChars = 1000000;
-        this.referenceImageIsEphemeral = false;
-        this.referenceImageEphemeralNoticeShown = false;
-
-        // Initialize session manager
-        this.sessionManager = new SessionManager();
-
-        // Initialize i18n
-        if (window.i18n) {
-            window.i18n.init();
-        }
-
-        this.initElements();
-        this.initEventListeners();
-        this.loadInitialConfig();
-        this.initLanguage();
-
-        // Load current session state
-        this.loadSessionState();
-
-        // Update session selector UI
-        this.updateSessionSelector();
-
-        // Initialize button state
-        this.updateGenerateButtonState();
-
-        // Discover storyboard packages from the embedded ComicBrain workspace.
-        this.refreshComicBrainProjects();
-    }
-
-    /**
-     * Initialize DOM element references
-     */
-    initElements() {
-        // Input elements
-        this.apiKeyInput = document.getElementById('api-key');
-        this.googleApiKeyInput = document.getElementById('google-api-key');
-        this.promptInput = document.getElementById('prompt-input');
-        this.promptWrapper = document.querySelector('.prompt-wrapper');
-        this.pageCountInput = document.getElementById('page-count');
-        this.rowsPerPageSelect = document.getElementById('rows-per-page');
-        this.comicStyleSelect = document.getElementById('comic-style');
-        this.comicLanguageSelect = document.getElementById('comic-language');
-        this.jsonInput = document.getElementById('json-input');
-        this.comicBrainProjectSelect = document.getElementById('comicbrain-project-select');
-        this.comicBrainRefreshBtn = document.getElementById('comicbrain-refresh-btn');
-        this.comicBrainLoadBtn = document.getElementById('comicbrain-load-btn');
-        this.comicBrainStatus = document.getElementById('comicbrain-status');
-        this.coverCustomInput = document.getElementById('cover-custom-input');
-
-        // Config elements
-        this.modelProviderSelect = document.getElementById('model-provider-select');
-        this.modelProviderHelp = document.getElementById('model-provider-help');
-        this.googleCredentialConfig = document.getElementById('google-credential-config');
-        this.openaiCredentialConfig = document.getElementById('openai-credential-config');
-        this.textModelConfig = document.getElementById('text-model-config');
-        this.reasoningEffortConfig = document.getElementById('reasoning-effort-config');
-        this.baseUrlInput = document.getElementById('base-url');
-        this.modelSelect = document.getElementById('model-select');
-        this.customModelInput = document.getElementById('custom-model');
-        this.reasoningEffortSelect = document.getElementById('reasoning-effort-select');
-        this.imageProviderSelect = document.getElementById('image-provider-select');
-        this.imageModelSelect = document.getElementById('image-model-select');
-        this.customImageModelInput = document.getElementById('custom-image-model');
-        this.imageSizeSelect = document.getElementById('image-size-select');
-        this.imageQualitySelect = document.getElementById('image-quality-select');
-        this.configPanel = document.getElementById('config-panel');
-
-        // Button elements
-        this.generateBtn = document.querySelector('button[onclick="generateWithAI()"]');
-        this.renderBtn = document.querySelector('button[onclick="renderComic()"]');
-        this.downloadBtn = document.querySelector('.download-btn');
-        this.generateAllBtn = document.getElementById('generate-all-btn');
-        this.resumeGenerationBtn = document.getElementById('resume-generation-btn');
-        this.resumeGenerationText = document.getElementById('resume-generation-text');
-        this.prevBtn = document.getElementById('prev-btn');
-        this.nextBtn = document.getElementById('next-btn');
-        this.optimizeBtn = document.getElementById('optimize-btn');
-
-        // Status elements
-        this.aiStatus = document.getElementById('ai-status');
-        this.errorMsg = document.getElementById('error-msg');
-        this.pageIndicator = document.getElementById('page-indicator');
-        this.pageNav = document.getElementById('page-nav');
-        this.renderCurrentBtn = document.getElementById('render-current-btn');
-        this.toggleViewBtn = document.getElementById('toggle-view-btn');
-
-        // Reference Image elements
-        this.imagePreviewContainer = document.getElementById('image-preview-container');
-        this.referenceImagePreview = document.getElementById('reference-image-preview');
-        this.referenceImageInput = document.getElementById('reference-image-input');
-        this.referenceUploadBtn = document.getElementById('reference-upload-btn');
-        this.referenceImageStatus = document.getElementById('reference-image-status');
-        this.referenceImageStatusText = this.referenceImageStatus
-            ? this.referenceImageStatus.querySelector('span')
-            : null;
-
-        console.log('UIController elements initialized:', {
-            renderCurrentBtn: !!this.renderCurrentBtn,
-            toggleViewBtn: !!this.toggleViewBtn,
-            optimizeBtn: !!this.optimizeBtn
+  constructor() {
+    this.store = new ConsoleStore();
+    this.views = new ConsoleViews(this);
+    this.workspace = {
+      series: [],
+      principles: [],
+      preferences: [],
+      projects: [],
+    };
+    this.connected = false;
+    this.loading = true;
+    this.error = "";
+    this.busy = false;
+    this.characterEdits = {};
+    this.disclosures = new Map();
+    this.renderKey = "";
+    this.tab = "chapters";
+    this.rule = 0;
+    this.output = "comic";
+    this.filter = "all";
+    this.librarySeries = "";
+    this.search = "";
+    this.returnHash = null;
+    this.main = document.getElementById("content");
+    this.bind();
+    this.commands = new AppCommands(this);
+    this.commands.install();
+    this.render();
+    this.assistant = window.CreativeAssistant ? new window.CreativeAssistant(this) : null;
+    this.workspaceUI = window.WorkspaceUI ? new window.WorkspaceUI(this) : null;
+    this.refresh();
+  }
+  get seriesList() {
+    const list = [...this.workspace.series];
+    for (const d of this.store.all())
+      if (
+        d.mode === "series" &&
+        d.seriesId &&
+        hasContent(d) &&
+        !list.some((s) => s.id === d.seriesId)
+      )
+        list.push({
+          id: d.seriesId,
+          name: d.seriesName || "新系列",
+          summary: d.seriesBrief || d.idea,
+          genre: "新系列 · 草稿",
+          chapters: [],
+          documents: [],
+          projects: [],
         });
-    }
-
-    /**
-     * Initialize event listeners
-     */
-    initEventListeners() {
-        // API key auto-save
-        this.apiKeyInput.addEventListener('blur', () => {
-            ConfigManager.saveApiKey(this.apiKeyInput.value);
-        });
-
-        // Google API key auto-save
-        this.googleApiKeyInput.addEventListener('blur', () => {
-            ConfigManager.saveGoogleApiKey(this.googleApiKeyInput.value);
-        });
-
-        if (this.modelProviderSelect) {
-            this.modelProviderSelect.addEventListener('change', () => {
-                this.syncImageProviderToModelProvider();
-                this.updateModelConfigVisibility();
-            });
-        }
-
-        // Model select change
-        this.modelSelect.addEventListener('change', () => {
-            const customInput = document.getElementById('custom-model-input');
-            if (this.modelSelect.value === 'custom') {
-                customInput.style.display = 'block';
-            } else {
-                customInput.style.display = 'none';
-            }
-        });
-
-        // Image provider/model select changes
-        if (this.imageProviderSelect) {
-            this.imageProviderSelect.addEventListener('change', () => {
-                this.updateModelConfigVisibility();
-            });
-        }
-
-        if (this.imageModelSelect) {
-            this.imageModelSelect.addEventListener('change', () => {
-                this.updateModelConfigVisibility();
-            });
-        }
-
-        // Listen for language change events
-        window.addEventListener('languageChanged', (e) => {
-            this.onLanguageChanged(e.detail.lang);
-        });
-
-        // Add keyboard shortcut for Command+Enter (or Ctrl+Enter on Windows/Linux)
-        this.promptInput.addEventListener('keydown', (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                e.preventDefault();
-                this.generateWithAI();
-            }
-        });
-
-        // Input validation for generate button
-        this.promptInput.addEventListener('input', () => {
-            this.updateGenerateButtonState();
-        });
-
-        // Save session state when style or language changes
-        if (this.comicStyleSelect) {
-            this.comicStyleSelect.addEventListener('change', () => {
-                this.saveCurrentSessionState();
-                this.scheduleComicBrainReviewSave();
-            });
-        }
-
-        if (this.comicLanguageSelect) {
-            this.comicLanguageSelect.addEventListener('change', () => {
-                this.saveCurrentSessionState();
-                this.scheduleComicBrainReviewSave();
-            });
-        }
-
-        // Save session state for prompt and page count
-        if (this.promptInput) {
-            this.promptInput.addEventListener('blur', () => {
-                this.saveCurrentSessionState();
-            });
-
-            // Handle image paste
-            this.promptInput.addEventListener('paste', (e) => {
-                this.handleImagePaste(e);
-            });
-        }
-
-        if (this.referenceImageInput) {
-            this.referenceImageInput.addEventListener('change', (e) => {
-                const file = Array.from(e.target.files || []).find((selectedFile) => {
-                    return selectedFile.type && selectedFile.type.startsWith('image/');
-                });
-                this._processImageFile(file);
-            });
-        }
-
-        this.initReferenceImageDropZone();
-
-        if (this.pageCountInput) {
-            this.pageCountInput.addEventListener('change', () => {
-                this.saveCurrentSessionState();
-            });
-        }
-
-        if (this.rowsPerPageSelect) {
-            this.rowsPerPageSelect.addEventListener('change', () => {
-                this.saveCurrentSessionState();
-                this.scheduleComicBrainReviewSave();
-            });
-        }
-
-        if (this.coverCustomInput) {
-            this.coverCustomInput.addEventListener('input', () => {
-                this.saveCurrentSessionState();
-                this.scheduleComicBrainReviewSave();
-            });
-        }
-
-        if (this.comicBrainProjectSelect) {
-            this.comicBrainProjectSelect.addEventListener('change', () => {
-                if (this.comicBrainLoadBtn) {
-                    this.comicBrainLoadBtn.disabled = !this.comicBrainProjectSelect.value;
-                }
-            });
-        }
-    }
-
-    /**
-     * Update generate button state based on input
-     */
-    updateGenerateButtonState() {
-        if (!this.generateBtn || !this.promptInput) return;
-
-        // Don't change state if currently generating
-        if (this.isGenerating) return;
-
-        const prompt = this.promptInput.value.trim();
-        this.generateBtn.disabled = prompt === '';
-    }
-
-    /**
-     * Initialize language selector
-     */
-    initLanguage() {
-        const languageSelect = document.getElementById('language-select');
-        if (languageSelect && window.i18n) {
-            const currentLang = window.i18n.getLanguage();
-            languageSelect.value = currentLang;
-
-            // Sync comic language with interface language on page load
-            const comicLanguageSelect = document.getElementById('comic-language');
-            if (comicLanguageSelect) {
-                comicLanguageSelect.value = currentLang;
-            }
-        }
-    }
-
-    /**
-     * Handle language change
-     * @param {string} lang - New language code
-     */
-    onLanguageChanged(lang) {
-        this.updateModelConfigVisibility();
-        this.syncComicBrainUIFromSession();
-        this.updateBatchGenerationButtons();
-
-        // Update page indicator if visible
-        if (this.pageManager.getPageCount() > 0) {
-            const current = this.pageManager.getCurrentPageIndex() + 1;
-            const total = this.pageManager.getPageCount();
-            this.pageIndicator.innerText = ' (' + window.i18n.t('pageIndicator', { current, total }) + ')';
-        }
-    }
-
-    /**
-     * Load initial configuration
-     */
-    loadInitialConfig() {
-        const config = ConfigManager.loadConfig();
-        this.baseUrlInput.value = config.baseUrl;
-        if (this.modelProviderSelect) this.modelProviderSelect.value = config.modelProvider || 'codex';
-        this.modelSelect.value = config.model;
-        if (this.reasoningEffortSelect) this.reasoningEffortSelect.value = config.reasoningEffort || 'medium';
-        if (this.imageProviderSelect) this.imageProviderSelect.value = config.imageProvider || config.modelProvider || 'codex';
-        if (this.imageModelSelect) this.imageModelSelect.value = config.imageModel || 'gpt-image-2';
-        if (this.imageSizeSelect) this.imageSizeSelect.value = config.imageSize || '1024x1536';
-        if (this.imageQualitySelect) this.imageQualitySelect.value = config.imageQuality || 'medium';
-
-        if (config.customModel) {
-            this.customModelInput.value = config.customModel;
-        }
-        if (config.customImageModel && this.customImageModelInput) {
-            this.customImageModelInput.value = config.customImageModel;
-        }
-
-        if (config.model === 'custom') {
-            document.getElementById('custom-model-input').style.display = 'block';
-        }
-        this.updateModelConfigVisibility();
-
-        // Load saved API key
-        this.apiKeyInput.value = ConfigManager.loadApiKey();
-
-        // Load saved Google API key
-        this.googleApiKeyInput.value = ConfigManager.loadGoogleApiKey();
-
-        // Set up renderer onChange callback
-        this.renderer.setOnChange((data) => {
-            this.onComicDataChange(data);
-        });
-
-        // Render initial comic
-        this.renderComic();
-    }
-
-    /**
-     * Toggle configuration panel
-     */
-    toggleConfig() {
-        const isHidden = window.getComputedStyle(this.configPanel).display === 'none';
-        if (isHidden) {
-            this.configPanel.style.display = 'block';
-        } else {
-            this.configPanel.style.display = 'none';
-        }
-    }
-
-    /**
-     * Save configuration
-     */
-    saveConfig() {
-        const baseUrl = this.baseUrlInput.value.trim();
-        const modelProvider = this.modelProviderSelect ? this.modelProviderSelect.value : 'codex';
-        const model = this.modelSelect.value;
-        const customModel = this.customModelInput.value.trim();
-        const reasoningEffort = this.reasoningEffortSelect ? this.reasoningEffortSelect.value : 'medium';
-        const imageProvider = this.imageProviderSelect ? this.imageProviderSelect.value : modelProvider;
-        const imageModel = this.imageModelSelect ? this.imageModelSelect.value : 'gpt-image-2';
-        const customImageModel = this.customImageModelInput ? this.customImageModelInput.value.trim() : '';
-        const imageSize = this.imageSizeSelect ? this.imageSizeSelect.value : '1024x1536';
-        const imageQuality = this.imageQualitySelect ? this.imageQualitySelect.value : 'medium';
-        const apiKey = this.apiKeyInput.value.trim();
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-
-        const config = {
-            baseUrl: baseUrl,
-            modelProvider: modelProvider,
-            model: model,
-            customModel: customModel,
-            reasoningEffort: reasoningEffort,
-            imageProvider: imageProvider,
-            imageModel: imageModel,
-            customImageModel: customImageModel,
-            imageSize: imageSize,
-            imageQuality: imageQuality
-        };
-
-        const configSaved = ConfigManager.saveConfig(config);
-        const apiKeySaved = ConfigManager.saveApiKey(apiKey);
-        const googleApiKeySaved = ConfigManager.saveGoogleApiKey(googleApiKey);
-
-        if (configSaved && apiKeySaved && googleApiKeySaved) {
-            alert(window.i18n.t('alertConfigSaved'));
-        } else {
-            alert(window.i18n.t('alertConfigFailed'));
-        }
-    }
-
-    /**
-     * Toggle advanced configuration section
-     */
-    toggleAdvancedSettings() {
-        const advancedConfig = document.getElementById('advanced-config');
-        const chevron = document.getElementById('advanced-chevron');
-        if (advancedConfig.style.display === 'none') {
-            advancedConfig.style.display = 'flex';
-            chevron.style.transform = 'rotate(90deg)';
-        } else {
-            advancedConfig.style.display = 'none';
-            chevron.style.transform = 'rotate(0deg)';
-        }
-    }
-
-    /**
-     * Update image provider-specific config visibility
-     */
-    updateModelConfigVisibility() {
-        const openaiImageConfig = document.getElementById('openai-image-config');
-        const customImageModelInput = document.getElementById('custom-image-model-input');
-        const provider = this.modelProviderSelect ? this.modelProviderSelect.value : 'codex';
-        const imageProvider = this.imageProviderSelect ? this.imageProviderSelect.value : provider;
-        const imageModel = this.imageModelSelect ? this.imageModelSelect.value : 'gpt-image-2';
-        const helpKey = {
-            codex: 'modelProviderCodexHelp',
-            google: 'modelProviderGoogleHelp',
-            openai: 'modelProviderOpenAIHelp'
-        }[provider] || 'modelProviderCodexHelp';
-
-        if (this.modelProviderHelp && window.i18n) {
-            this.modelProviderHelp.innerText = window.i18n.t(helpKey);
-        }
-
-        if (this.googleCredentialConfig) {
-            this.googleCredentialConfig.style.display = provider === 'google' ? 'block' : 'none';
-        }
-
-        if (this.openaiCredentialConfig) {
-            this.openaiCredentialConfig.style.display = provider === 'openai' ? 'block' : 'none';
-        }
-
-        // Codex accepts its own model catalog; API-compatible providers retain legacy options.
-        for (const option of this.modelSelect.options) {
-            option.hidden = provider === 'codex'
-                && option.value !== 'custom'
-                && option.dataset.codexSupported !== 'true';
-        }
-        if (this.modelSelect.selectedOptions[0]?.hidden) {
-            this.modelSelect.value = DEFAULT_CONFIG.model;
-        }
-        document.getElementById('custom-model-input').style.display =
-            this.modelSelect.value === 'custom' ? 'block' : 'none';
-
-        if (this.textModelConfig) {
-            this.textModelConfig.style.display = provider === 'google' ? 'none' : 'block';
-        }
-
-        if (this.reasoningEffortConfig) {
-            this.reasoningEffortConfig.style.display = provider === 'google' ? 'none' : 'block';
-        }
-
-        if (openaiImageConfig) {
-            openaiImageConfig.style.display = imageProvider === 'openai' || imageProvider === 'codex' ? 'block' : 'none';
-        }
-
-        if (customImageModelInput) {
-            customImageModelInput.style.display = (imageProvider === 'openai' || imageProvider === 'codex') && imageModel === 'custom' ? 'block' : 'none';
-        }
-    }
-
-    /**
-     * Keep the image provider simple by default: it follows the chosen model provider.
-     */
-    syncImageProviderToModelProvider() {
-        if (!this.modelProviderSelect || !this.imageProviderSelect) return;
-        this.imageProviderSelect.value = this.modelProviderSelect.value;
-    }
-
-    /**
-     * Validate provider-specific text generation credentials.
-     */
-    validateTextGenerationConfig(config, apiKey, googleApiKey) {
-        if (config.textProvider === 'codex') return true;
-        if (config.textProvider === 'openai') {
-            if (!apiKey) {
-                alert(window.i18n.t('alertNoOpenAITextApiKey') || 'Please enter OpenAI/API key in settings');
-                return false;
-            }
-            return true;
-        }
-        if (!googleApiKey) {
-            alert(window.i18n.t('alertNoGoogleApiKey') || 'Please enter Google API Key in settings');
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * Read image generation settings and API keys from the current UI/config
-     */
-    getImageGenerationConfig() {
-        const config = ConfigManager.getCurrentConfig();
-        return {
-            imageProvider: config.imageProvider,
-            imageModel: config.imageModel,
-            imageSize: config.imageSize,
-            imageQuality: config.imageQuality,
-            reasoningEffort: config.reasoningEffort || 'medium',
-            baseUrl: config.baseUrl,
-            openaiApiKey: this.apiKeyInput.value.trim(),
-            googleApiKey: this.googleApiKeyInput.value.trim()
-        };
-    }
-
-    /**
-     * Validate provider-specific image generation credentials
-     */
-    validateImageGenerationConfig(imageConfig) {
-        if (imageConfig.imageProvider === 'openai') {
-            if (!imageConfig.openaiApiKey) {
-                alert(window.i18n.t('alertNoOpenAIImageApiKey') || 'Please enter OpenAI API Key in settings');
-                return false;
-            }
-            return true;
-        }
-
-        if (imageConfig.imageProvider === 'codex') {
-            return true;
-        }
-
-        if (!imageConfig.googleApiKey) {
-            alert(window.i18n.t('alertNoGoogleApiKey') || 'Please configure Google API Key in settings');
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * Handle image paste into prompt input
-     * @param {ClipboardEvent} event - Paste event
-     */
-    handleImagePaste(event) {
-        const clipboardData = event.clipboardData || event.originalEvent?.clipboardData;
-        if (!clipboardData?.items) return;
-
-        const items = clipboardData.items;
-
-        for (const item of items) {
-            if (item.type.indexOf('image') !== -1) {
-                const file = item.getAsFile();
-                this._processImageFile(file);
-                // Prevent default paste if it's an image
-                // event.preventDefault(); // Don't prevent default, user might be pasting text AND image (rare) or just text
-            }
-        }
-    }
-
-    /**
-     * Initialize drag and drop support for reference images.
-     */
-    initReferenceImageDropZone() {
-        if (!this.promptWrapper) return;
-
-        const showDragState = (event) => {
-            if (!this._hasDraggedImage(event)) return;
-            event.preventDefault();
-            event.stopPropagation();
-            this.promptWrapper.classList.add('drag-over');
-        };
-
-        this.promptWrapper.addEventListener('dragenter', showDragState);
-        this.promptWrapper.addEventListener('dragover', showDragState);
-
-        this.promptWrapper.addEventListener('dragleave', (event) => {
-            if (!this.promptWrapper.contains(event.relatedTarget)) {
-                this.promptWrapper.classList.remove('drag-over');
-            }
-        });
-
-        this.promptWrapper.addEventListener('drop', (event) => {
-            if (!this._hasDraggedImage(event)) return;
-
-            event.preventDefault();
-            event.stopPropagation();
-            this.promptWrapper.classList.remove('drag-over');
-
-            const file = Array.from(event.dataTransfer.files || []).find((droppedFile) => {
-                return droppedFile.type && droppedFile.type.startsWith('image/');
-            });
-
-            this._processImageFile(file);
-        });
-    }
-
-    /**
-     * Check whether a drag event contains an image file.
-     * @param {DragEvent} event
-     * @returns {boolean}
-     */
-    _hasDraggedImage(event) {
-        const items = Array.from(event.dataTransfer?.items || []);
-        if (items.length > 0) {
-            return items.some((item) => item.kind === 'file' && item.type.startsWith('image/'));
-        }
-
-        return Array.from(event.dataTransfer?.files || []).some((file) => {
-            return file.type && file.type.startsWith('image/');
-        });
-    }
-
-    /**
-     * Open the reference image file picker.
-     */
-    triggerReferenceImageUpload() {
-        if (this.referenceImageInput) {
-            this.referenceImageInput.click();
-        }
-    }
-
-    /**
-     * Process an image file (from paste or upload)
-     * @param {File} file 
-     */
-    _processImageFile(file) {
-        if (!file) return;
-
-        if (!file.type || !file.type.startsWith('image/')) {
-            return;
-        }
-
-        // Check file size (e.g., limit to 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            alert(window.i18n.t('alertFileTooLarge') || 'File is too large. Please upload an image smaller than 5MB.');
-            if (this.referenceImageInput) {
-                this.referenceImageInput.value = '';
-            }
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const base64Image = e.target.result;
-            this.referenceImage = base64Image;
-            this.referenceImageIsEphemeral = this.isReferenceImageTooLargeForStorage(base64Image);
-            this.referenceImageEphemeralNoticeShown = false;
-
-            this.updateReferenceImageUI();
-            if (this.referenceImageIsEphemeral) {
-                this.showReferenceImageSessionOnlyNotice();
-            }
-
-            // Save to session state
-            this.saveCurrentSessionState();
-
-            if (this.referenceImageInput) {
-                this.referenceImageInput.value = '';
-            }
-        };
-        reader.readAsDataURL(file);
-    }
-
-    /**
-     * Large data URLs can exceed localStorage's quota once serialized with the
-     * rest of a session. They remain usable in memory for the current opening.
-     */
-    isReferenceImageTooLargeForStorage(image = this.referenceImage) {
-        const maxChars = Number.isFinite(this.referenceImagePersistenceMaxChars)
-            ? this.referenceImagePersistenceMaxChars
-            : 1000000;
-        return typeof image === 'string'
-            && image.length > maxChars;
-    }
-
-    /**
-     * Return only reference images that are safe to include in localStorage.
-     */
-    getPersistableReferenceImage() {
-        return this.isReferenceImageTooLargeForStorage() ? null : this.referenceImage;
-    }
-
-    /**
-     * Show one non-blocking notice per large image selection.
-     */
-    showReferenceImageSessionOnlyNotice() {
-        if (this.referenceImageEphemeralNoticeShown) return;
-        this.referenceImageEphemeralNoticeShown = true;
-        const message = window.i18n
-            ? window.i18n.t('referenceImageSessionOnly')
-            : '较大参考图仅本次打开有效';
-        this.showStatus(message, 'info');
-        window.setTimeout(() => {
-            if (this.aiStatus && this.aiStatus.innerText === message) {
-                this.hideStatus();
-            }
-        }, 5000);
-    }
-
-    /**
-     * Keep all reference image UI surfaces in sync.
-     */
-    updateReferenceImageUI() {
-        const hasReferenceImage = !!this.referenceImage;
-
-        if (this.referenceImagePreview) {
-            this.referenceImagePreview.src = hasReferenceImage ? this.referenceImage : '';
-        }
-
-        if (this.imagePreviewContainer) {
-            this.imagePreviewContainer.style.display = hasReferenceImage ? 'flex' : 'none';
-        }
-
-        if (this.referenceImageStatus) {
-            this.referenceImageStatus.style.display = hasReferenceImage ? 'inline-flex' : 'none';
-        }
-
-        if (this.referenceImageStatusText) {
-            const statusKey = this.referenceImageIsEphemeral
-                ? 'referenceImageSessionOnly'
-                : 'referenceImageAttached';
-            this.referenceImageStatusText.dataset.i18n = statusKey;
-            this.referenceImageStatusText.textContent = window.i18n
-                ? window.i18n.t(statusKey)
-                : (this.referenceImageIsEphemeral
-                    ? '较大参考图仅本次打开有效'
-                    : '1 张参考图');
-        }
-
-        if (this.referenceUploadBtn) {
-            this.referenceUploadBtn.classList.toggle('has-reference', hasReferenceImage);
-        }
-    }
-
-    /**
-     * Remove the uploaded reference image
-     */
-    removeReferenceImage() {
-        this.referenceImage = null;
-        this.referenceImageIsEphemeral = false;
-        this.referenceImageEphemeralNoticeShown = false;
-        if (this.referenceImageInput) {
-            this.referenceImageInput.value = '';
-        }
-        this.updateReferenceImageUI();
-
-        // Save to session state
-        this.saveCurrentSessionState();
-    }
-
-    /**
-     * Optimize user's prompt using AI
-     */
-    async optimizePrompt() {
-        const apiKey = this.apiKeyInput.value.trim();
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        const prompt = this.promptInput.value.trim();
-        const comicStyle = this.comicStyleSelect.value;
-        const language = this.comicLanguageSelect.value;
-        const config = ConfigManager.getCurrentConfig();
-
-        // Validate inputs
-        if (!this.validateTextGenerationConfig(config, apiKey, googleApiKey)) {
-            return;
-        }
-
-        if (!prompt) {
-            alert(window.i18n.t('alertEmptyPrompt') || 'Please enter content first');
-            return;
-        }
-
-        try {
-            // Update button state
-            this.optimizeBtn.disabled = true;
-            this.optimizeBtn.classList.add('loading');
-
-            // Call API
-            const result = await ComicAPI.optimizePrompt(
-                apiKey,
-                googleApiKey,
-                prompt,
-                config.baseUrl,
-                config.model,
-                config.textProvider,
-                config.reasoningEffort,
-                comicStyle,
-                language
-            );
-
-            if (result.success && result.optimized_prompt) {
-                // Replace prompt with optimized version
-                this.promptInput.value = result.optimized_prompt;
-                
-                // Show success message (optional)
-                this.showStatus(window.i18n.t('statusOptimizeSuccess') || 'Prompt optimized', 'success');
-                setTimeout(() => this.hideStatus(), 2000);
-            } else {
-                throw new Error('Optimization failed');
-            }
-
-        } catch (error) {
-            console.error('Prompt optimization failed:', error);
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-            alert(window.i18n.t('alertOptimizeFailed', { error: error.message }) || `Optimization failed: ${error.message}`);
-        } finally {
-            // Restore button state
-            this.optimizeBtn.disabled = false;
-            this.optimizeBtn.classList.remove('loading');
-        }
-    }
-
-    /**
-     * Generate comic with AI
-     */
-    async generateWithAI() {
-        if (this.isGenerating) return;
-
-        const apiKey = this.apiKeyInput.value.trim();
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        const prompt = this.promptInput.value.trim();
-        const pageCount = parseInt(this.pageCountInput.value) || 3;
-        const rowsPerPage = parseInt(this.rowsPerPageSelect.value) || 4;
-        const comicStyle = this.comicStyleSelect.value;
-        const language = this.comicLanguageSelect.value;
-        const config = ConfigManager.getCurrentConfig();
-
-        // Validate inputs
-        if (!this.validateTextGenerationConfig(config, apiKey, googleApiKey)) {
-            return;
-        }
-
-        if (!prompt) {
-            alert(window.i18n.t('alertNoPrompt'));
-            return;
-        }
-
-        const originalBtnContent = this.generateBtn.innerHTML;
-
-        try {
-            this.isGenerating = true;
-
-            // Update UI with spinner
-            this.generateBtn.disabled = true;
-            this.generateBtn.classList.add('loading');
-            this.generateBtn.innerHTML = '<span class="spinner" style="margin-right: 0;"></span>';
-            // this.showStatus(window.i18n.t('statusGenerating', { model: config.model }), 'info');
-
-            // Call API
-            const result = await ComicAPI.generateComic(
-                apiKey,
-                prompt,
-                pageCount,
-                config.baseUrl,
-                config.model,
-                config.textProvider,
-                config.reasoningEffort,
-                comicStyle,
-                language,
-                rowsPerPage,
-                googleApiKey
-            );
-
-            // Reset generated images when loading new JSON
-            this.generatedPagesImages = {};
-
-            // Hide cover generation button
-            const coverBtn = document.getElementById('generate-cover-btn');
-            if (coverBtn) {
-                coverBtn.style.display = 'none';
-            }
-
-            // Update page manager
-            this.pageManager.setPages(result.pages);
-            this.updateBatchGenerationButtons();
-
-            // Show render current page button
-            if (this.renderCurrentBtn) {
-                this.renderCurrentBtn.style.display = 'inline-flex';
-            }
-
-            // Show navigation and generate all button if multiple pages
-            if (result.page_count > 1) {
-                this.pageNav.style.display = 'flex';
-                this.generateAllBtn.style.display = 'inline-flex';
-            } else {
-                this.pageNav.style.display = 'none';
-                this.generateAllBtn.style.display = 'none';
-            }
-
-            // Load first page
-            this.loadCurrentPage();
-
-            // Show success
-            this.showStatus(window.i18n.t('statusSuccess', { count: result.page_count }), 'success');
-            setTimeout(() => this.hideStatus(), 3000);
-
-            // Auto-generate session title (non-blocking)
-            this.generateSessionTitle(prompt, result, apiKey, googleApiKey, language);
-
-        } catch (error) {
-            console.error('AI generation failed:', error);
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-
-            let errorMsg = window.i18n.t('errorGenerationFailed', { error: error.message });
-            alert(errorMsg);
-        } finally {
-            this.isGenerating = false;
-            this.updateGenerateButtonState();
-            this.generateBtn.classList.remove('loading');
-            if (typeof originalBtnContent !== 'undefined') {
-                this.generateBtn.innerHTML = originalBtnContent;
-            }
-
-            // Save session state
-            this.saveCurrentSessionState();
-        }
-    }
-
-    /**
-     * Auto-generate session title based on prompt and comic data
-     * This runs in the background and won't block the UI
-     * @param {string} prompt - User's prompt
-     * @param {Object} comicData - Generated comic data
-     * @param {string} apiKey - OpenAI API key
-     * @param {string} googleApiKey - Google API key
-     * @param {string} language - Comic language
-     */
-    async generateSessionTitle(prompt, comicData, apiKey, googleApiKey, language) {
-        try {
-            // Check if current session already has a custom name (not default "session X")
-            const currentSession = this.sessionManager.getCurrentSession();
-            if (!currentSession) return;
-
-            // Only auto-generate if the session has a default name like "session 1", "session 2", etc.
-            const defaultNamePattern = /^session \d+$/i;
-            if (!defaultNamePattern.test(currentSession.name)) {
-                console.log('Session already has a custom name, skipping auto-generation');
-                return;
-            }
-
-            const config = ConfigManager.getCurrentConfig();
-
-            // Call API to generate title
-            const result = await ComicAPI.generateSessionTitle(
-                apiKey,
-                googleApiKey,
-                prompt,
-                comicData,
-                config.baseUrl,
-                config.model,
-                config.textProvider,
-                config.reasoningEffort,
-                language
-            );
-
-            if (result.success && result.title) {
-                // Update session name
-                this.sessionManager.updateCurrentSession({ name: result.title });
-
-                // Update UI
-                this.updateSessionSelector();
-
-                console.log(`Session title auto-generated: ${result.title}`);
-            }
-        } catch (error) {
-            // Title generation failure should not affect the main workflow
-            console.error('Session title auto-generation failed:', error);
-            // Silently fail - user can still use the session with default name
-        }
-    }
-
-    /**
-     * Render comic from JSON input
-     */
-    renderComic() {
-        const input = this.jsonInput.value;
-
-        // Skip rendering if input is empty
-        if (!input || input.trim() === '') {
-            return false;
-        }
-
-        try {
-            const data = JSON.parse(input);
-            this.errorMsg.style.display = 'none';
-            this.syncComicBrainRowsDisplay(data);
-
-            if (this.renderer.render(data)) {
-                if (this.pageManager.getPageCount() > 0) {
-                    this.pageManager.updateCurrentPage(data);
-                    if (!this.isLoadingSession) {
-                        this.saveCurrentSessionState();
-                    }
-                }
-
-                // Don't reset generated images when rendering existing pages
-                // Only reset when loading completely new content from user input
-                // This is handled in generateWithAI() instead
-
-                // Hide cover generation button only if we don't have any generated images
-                const coverBtn = document.getElementById('generate-cover-btn');
-                if (coverBtn && Object.keys(this.generatedPagesImages).length === 0) {
-                    coverBtn.style.display = 'none';
-                }
-
-                // Success - show comic page and hint, hide empty state
-                const comicPage = document.getElementById('comic-page');
-                const editHint = document.querySelector('.edit-hint');
-                const previewContainer = document.querySelector('.preview-container');
-                const emptyState = document.getElementById('empty-state');
-
-                if (emptyState) emptyState.style.display = 'none';
-                if (comicPage) comicPage.style.display = 'flex';
-                if (editHint) editHint.style.display = 'block';
-                if (previewContainer) previewContainer.classList.add('has-content');
-
-                // Show render current page button
-                if (this.renderCurrentBtn) this.renderCurrentBtn.style.display = 'inline-flex';
-
-                // Check if we need to show Generate All button (if we have multiple pages)
-                this.updateBatchGenerationButtons();
-
-                return true;
-            } else {
-                throw new Error('Render failed');
-            }
-        } catch (e) {
-            console.error(e);
-            this.errorMsg.style.display = 'block';
-            this.errorMsg.innerText = 'JSON 格式错误: ' + e.message;
-            return false;
-        }
-    }
-
-    /**
-     * Handle comic data changes from direct editing
-     * @param {Object} data - Updated comic data
-     */
-    onComicDataChange(data) {
-        // Update JSON input (even though it's hidden)
-        this.jsonInput.value = JSON.stringify(data, null, 2);
-
-        // Update page manager if we're in multi-page mode
-        if (this.pageManager.getPageCount() > 0) {
-            this.pageManager.updateCurrentPage(data);
-        }
-
-        // Direct panel edits should survive a refresh immediately. ComicBrain
-        // projects additionally get a debounced, non-canonical review draft.
-        this.saveCurrentSessionState();
-        this.scheduleComicBrainReviewSave();
-    }
-
-    /**
-     * Load current page
-     */
-    loadCurrentPage() {
-        const pageData = this.pageManager.getCurrentPage();
-        if (!pageData) return;
-        this.syncComicBrainRowsDisplay(pageData);
-
-        // Update JSON editor
-        this.jsonInput.value = JSON.stringify(pageData, null, 2);
-
-        // Update page indicator
-        const current = this.pageManager.getCurrentPageIndex() + 1;
-        const total = this.pageManager.getPageCount();
-        this.pageIndicator.innerText = ' (' + window.i18n.t('pageIndicator', { current, total }) + ')';
-
-        // Update button states
-        this.prevBtn.disabled = !this.pageManager.hasPrevPage();
-        this.nextBtn.disabled = !this.pageManager.hasNextPage();
-
-        // Check if we have a generated image for this page
-        const pageIndex = this.pageManager.getCurrentPageIndex();
-        // Convert to string to match JSON keys from storage
-        const hasImage = this.generatedPagesImages && (this.generatedPagesImages[pageIndex] || this.generatedPagesImages[String(pageIndex)]);
-
-        console.log('loadCurrentPage check:', {
-            pageIndex: pageIndex,
-            hasImage: !!hasImage,
-            keys: this.generatedPagesImages ? Object.keys(this.generatedPagesImages) : []
-        });
-
-        if (hasImage) {
-            const imageData = this.generatedPagesImages[pageIndex] || this.generatedPagesImages[String(pageIndex)];
-            // Show toggle button
-            if (this.toggleViewBtn) {
-                this.toggleViewBtn.style.display = 'inline-flex';
-                this.toggleViewBtn.classList.add('viewing');
-            }
-
-            // Default to viewing image if it exists
-            this.isViewingImage = true;
-            this.displayImageDirectly(pageIndex);
-        } else {
-            // Hide toggle button
-            if (this.toggleViewBtn) {
-                this.toggleViewBtn.style.display = 'none';
-                this.toggleViewBtn.classList.remove('viewing');
-            }
-
-            this.isViewingImage = false;
-            // Render sketch
-            this.renderComic();
-        }
-    }
-
-    /**
-     * For ComicBrain sessions, show the current page's actual row count in the
-     * legacy global selector. Programmatic assignment does not fire "change"
-     * and never modifies the imported page structure.
-     */
-    syncComicBrainRowsDisplay(pageData) {
-        if (
-            !this.rowsPerPageSelect
-            || !this.getComicBrainSource()
-            || !pageData
-            || !Array.isArray(pageData.rows)
-            || pageData.rows.length < 1
-        ) {
-            return;
-        }
-
-        const rowCount = String(pageData.rows.length);
-        if (!this.hasSelectOption(this.rowsPerPageSelect, rowCount)) {
-            const option = document.createElement('option');
-            option.value = rowCount;
-            option.textContent = rowCount;
-            option.dataset.comicBrainDynamic = 'true';
-            this.rowsPerPageSelect.appendChild(option);
-        }
-        this.rowsPerPageSelect.value = rowCount;
-    }
-
-    /**
-     * Go to previous page
-     */
-    prevPage() {
-        if (this.pageManager.prevPage()) {
-            this.loadCurrentPage();
-            this.saveCurrentSessionState();
-        }
-    }
-
-    /**
-     * Go to next page
-     */
-    nextPage() {
-        if (this.pageManager.nextPage()) {
-            this.loadCurrentPage();
-            this.saveCurrentSessionState();
-        }
-    }
-
-    /**
-     * Download current page
-     */
-    async downloadCurrentPage() {
-        const btn = this.downloadBtn;
-        const originalText = btn.innerText;
-
-        try {
-            btn.disabled = true;
-            btn.innerText = '生成中...';
-
-            // If we have a generated image, download it directly
-            const currentPageIndex = this.pageManager.getCurrentPageIndex();
-            if (this.generatedPagesImages && this.generatedPagesImages[currentPageIndex]) {
-                const pageData = this.generatedPagesImages[currentPageIndex];
-
-                // Handle new version format
-                if (pageData.versions && pageData.versions.length > 0) {
-                    const currentVersionIndex = pageData.currentVersion || 0;
-                    const currentVersionData = pageData.versions[currentVersionIndex];
-                    if (currentVersionData && currentVersionData.imageUrl) {
-                        await this.downloadImageFromUrl(currentVersionData.imageUrl);
-                        return;
-                    }
-                }
-
-                // Handle legacy format
-                if (pageData.imageUrl) {
-                    await this.downloadImageFromUrl(pageData.imageUrl);
-                    return;
-                }
-            }
-
-            // Otherwise download the sketch canvas
-            const element = this.renderer.getContainer();
-            const success = await ComicExporter.downloadPage(element);
-
-            if (!success) {
-                alert('图片生成失败，请重试');
-            }
-        } catch (error) {
-            console.error('Download failed:', error);
-            alert('下载失败: ' + error.message);
-        } finally {
-            btn.disabled = false;
-            btn.innerText = originalText;
-        }
-    }
-
-
-
-    /**
-     * Generate final comic image from current page
-     */
-    async generateFinalImage() {
-        if (this.jsonInput && this.jsonInput.value.trim()) {
-            const rendered = this.renderComic();
-            if (!rendered) return;
-        }
-
-        const pageData = this.pageManager.getCurrentPage();
-
-        if (!pageData) {
-            alert(window.i18n.t('alertNoPageData'));
-            return;
-        }
-
-        const imageConfig = this.getImageGenerationConfig();
-        if (!this.validateImageGenerationConfig(imageConfig)) {
-            return;
-        }
-
-        // Get the button element
-        const generateImageBtn = document.querySelector('button[onclick="generateFinalImage()"]');
-
-        try {
-            // Add loading state - only disable and add spinner, no text change
-            if (generateImageBtn) {
-                generateImageBtn.disabled = true;
-                generateImageBtn.classList.add('loading');
-            }
-
-            this.showStatus(window.i18n.t('statusPreparing'), 'info');
-
-            // Get current sketch as base64 (layout only, without text)
-            const element = this.renderer.getContainer();
-            const sketchBase64 = await ComicExporter.getBase64WithoutText(element);
-
-            // Get current comic style, rows per page, and language
-            const comicStyle = this.comicStyleSelect.value;
-            const rowsPerPage = Array.isArray(pageData.rows) && pageData.rows.length > 0
-                ? pageData.rows.length
-                : (parseInt(this.rowsPerPageSelect.value) || 4);
-            const language = this.comicLanguageSelect.value;
-
-            this.showStatus(window.i18n.t('statusGeneratingImage'), 'info');
-
-            // Get previously generated pages for current page index as reference
-            const currentPageIndex = this.pageManager.getCurrentPageIndex();
-            let previousPages = null;
-            if (currentPageIndex > 0 && Object.keys(this.generatedPagesImages).length > 0) {
-                // Get generated images from previous pages (up to 6)
-                const prevImages = [];
-                for (let i = currentPageIndex - 1; i >= 0 && prevImages.length < 6; i--) {
-                    if (this.generatedPagesImages[i]) {
-                        const page = this.generatedPagesImages[i];
-
-                        // Handle new version format
-                        if (page.versions && page.versions.length > 0) {
-                            const currentVersionIndex = page.currentVersion || 0;
-                            const currentVersionData = page.versions[currentVersionIndex];
-                            if (currentVersionData && currentVersionData.imageUrl) {
-                                prevImages.unshift({
-                                    pageIndex: page.pageIndex,
-                                    imageUrl: currentVersionData.imageUrl,
-                                    pageTitle: page.pageTitle
-                                });
-                            }
-                        }
-                        // Handle legacy format
-                        else if (page.imageUrl) {
-                            prevImages.unshift(page);
-                        }
-                    }
-                }
-                if (prevImages.length > 0) {
-                    previousPages = prevImages;
-                }
-            }
-
-            // Add user uploaded reference image if available
-            if (this.referenceImage) {
-                if (!previousPages) previousPages = [];
-                previousPages.unshift(this.referenceImage);
-            }
-
-            // Call API to generate image with sketch as reference
-            const result = await ComicAPI.generateComicImage(
-                pageData,
-                sketchBase64,
-                previousPages,
-                comicStyle,
-                rowsPerPage,
-                    language,
-                    imageConfig,
-                    this.getComicBrainSource(),
-                    this.getComicBrainRenderMetadata(currentPageIndex, pageData)
-            );
-
-            if (result.success && result.image_url) {
-                // Store the generated image for this page with version history
-                const timestamp = Date.now();
-                const pageTitle = pageData.title || `Page ${currentPageIndex + 1}`;
-
-                // Check if we already have versions for this page
-                if (!this.generatedPagesImages[currentPageIndex]) {
-                    // First generation - create new entry
-                    this.generatedPagesImages[currentPageIndex] = {
-                        pageIndex: currentPageIndex,
-                        pageTitle: pageTitle,
-                        currentVersion: 0,
-                        versions: [{
-                            imageUrl: result.image_url,
-                            timestamp: timestamp,
-                            version: 1
-                        }]
-                    };
-                } else {
-                    // Subsequent generation - append new version
-                    const pageData = this.generatedPagesImages[currentPageIndex];
-
-                    // Handle legacy format (single image object) - convert to version array
-                    if (pageData.imageUrl && !pageData.versions) {
-                        pageData.versions = [{
-                            imageUrl: pageData.imageUrl,
-                            timestamp: pageData.timestamp || Date.now() - 1000,
-                            version: 1
-                        }];
-                        delete pageData.imageUrl;
-                        delete pageData.timestamp;
-                    }
-
-                    // Add new version
-                    const newVersion = pageData.versions.length + 1;
-                    pageData.versions.push({
-                        imageUrl: result.image_url,
-                        timestamp: timestamp,
-                        version: newVersion
-                    });
-
-                    // Set current version to the latest
-                    pageData.currentVersion = pageData.versions.length - 1;
-                    pageData.pageTitle = pageTitle;
-                }
-
-                StoryboardImageReconciler.stampGeneratedImage(
-                    this.generatedPagesImages[currentPageIndex],
-                    pageData
-                );
-
-                // Show the generated image on canvas with flip animation
-                await this.showGeneratedImageOnCanvas(currentPageIndex);
-                this.showStatus(window.i18n.t('statusImageSuccess'), 'success');
-                setTimeout(() => this.hideStatus(), 3000);
-
-                // Enable cover generation button if we have at least one image
-                const coverBtn = document.getElementById('generate-cover-btn');
-                if (coverBtn) {
-                    coverBtn.style.display = 'inline-flex';
-                    coverBtn.disabled = false;
-                }
-
-                // Save session state immediately
-                this.saveCurrentSessionState();
-                this.updateBatchGenerationButtons();
-            } else {
-                throw new Error('Image generation failed');
-            }
-
-        } catch (error) {
-            console.error('Image generation failed:', error);
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-
-            let errorMsg = window.i18n.t('errorImageFailed', { error: error.message });
-            alert(errorMsg);
-        } finally {
-            // Restore button state - only remove disabled and loading class
-            if (generateImageBtn) {
-                generateImageBtn.disabled = false;
-                generateImageBtn.classList.remove('loading');
-            }
-
-            // After generation, we are viewing the image
-            this.isViewingImage = true;
-            // Show toggle button with active state
-            if (this.toggleViewBtn) {
-                this.toggleViewBtn.style.display = 'inline-flex';
-                this.toggleViewBtn.classList.add('viewing');
-            }
-        }
-    }
-
-    /**
-     * Toggle between comic image and layout view
-     */
-    async toggleView() {
-        if (this.isGenerating) return;
-
-        const pageIndex = this.pageManager.getCurrentPageIndex();
-        const pageData = this.generatedPagesImages[pageIndex];
-
-        // Check if we have image data (either legacy format or new version format)
-        if (!pageData) return;
-        const hasImage = pageData.imageUrl || (pageData.versions && pageData.versions.length > 0);
-        if (!hasImage) return;
-
-        // Toggle state
-        this.isViewingImage = !this.isViewingImage;
-
-        // Update button visual state
-        if (this.toggleViewBtn) {
-            if (this.isViewingImage) {
-                this.toggleViewBtn.classList.add('viewing');
-            } else {
-                this.toggleViewBtn.classList.remove('viewing');
-            }
-        }
-
-        // Perform flip animation
-        const comicPage = document.getElementById('comic-page');
-        if (!comicPage) return;
-
-        // 1. Flip out
-        comicPage.classList.add('flip-out');
-
-        // 2. Wait for half animation
-        await this._delay(600);
-
-        // 3. Swap content
-        if (this.isViewingImage) {
-            this.displayImageDirectly(pageIndex);
-        } else {
-            this.renderComic();
-        }
-
-        // 4. Flip in (re-using the same animation classes for consistency)
-        comicPage.classList.remove('flip-out');
-        comicPage.classList.add('flip-in');
-
-        // 5. Cleanup
-        await this._delay(800);
-        comicPage.classList.remove('flip-in');
-    }
-
-    /**
-     * Check whether a page has a usable generated image.
-     * Supports both the current version-history format and legacy sessions.
-     */
-    hasGeneratedPageImage(pageIndex) {
-        const page = this.generatedPagesImages[pageIndex]
-            || this.generatedPagesImages[String(pageIndex)];
-        if (!page) return false;
-        if (page.imageUrl) return true;
-        return Array.isArray(page.versions)
-            && page.versions.some(version => version && version.imageUrl);
-    }
-
-    /**
-     * Return page indexes that still need an image.
-     */
-    getPendingImagePageIndices(totalPages = this.pageManager.getPageCount()) {
-        const pending = [];
-        for (let i = 0; i < totalPages; i++) {
-            if (!this.hasGeneratedPageImage(i)) {
-                pending.push(i);
-            }
-        }
-        return pending;
-    }
-
-    /**
-     * Keep batch-generation actions in sync with saved progress.
-     */
-    updateBatchGenerationButtons() {
-        const totalPages = this.pageManager.getPageCount();
-        const showBatchActions = totalPages > 1;
-        const pendingPages = this.getPendingImagePageIndices(totalPages);
-        const completedPages = totalPages - pendingPages.length;
-
-        if (this.generateAllBtn) {
-            this.generateAllBtn.style.display = showBatchActions ? 'inline-flex' : 'none';
-        }
-
-        if (this.resumeGenerationBtn) {
-            const canResume = showBatchActions && completedPages > 0 && pendingPages.length > 0;
-            this.resumeGenerationBtn.style.display = canResume ? 'inline-flex' : 'none';
-        }
-
-        if (this.resumeGenerationText && pendingPages.length > 0) {
-            this.resumeGenerationText.textContent = window.i18n.t('resumeGenerationText', {
-                count: pendingPages.length
-            });
-        }
-    }
-
-    /**
-     * Generate all pages images with AI
-     * Uses previous generated pages as reference for consistency
-     */
-    async generateAllPagesImages({ resume = false } = {}) {
-        const totalPages = this.pageManager.getPageCount();
-
-        if (totalPages === 0) {
-            alert(window.i18n.t('alertNoPages'));
-            return;
-        }
-
-        const imageConfig = this.getImageGenerationConfig();
-        if (!this.validateImageGenerationConfig(imageConfig)) {
-            return;
-        }
-
-        const pagesToGenerate = resume
-            ? this.getPendingImagePageIndices(totalPages)
-            : Array.from({ length: totalPages }, (_, index) => index);
-
-        if (pagesToGenerate.length === 0) {
-            this.updateBatchGenerationButtons();
-            this.showStatus(window.i18n.t('statusAllSuccess', { total: totalPages }), 'success');
-            return;
-        }
-
-        const confirmation = resume
-            ? window.i18n.t('alertResumeGeneration', {
-                remaining: pagesToGenerate.length,
-                pages: pagesToGenerate
-                    .map(index => index + 1)
-                    .join(window.i18n.getLanguage() === 'zh' ? '、' : ', ')
-            })
-            : window.i18n.t('alertGenerateAll', { total: totalPages });
-
-        if (!confirm(confirmation)) {
-            return;
-        }
-
-        // A fresh batch replaces old images. Resume preserves every completed page.
-        if (!resume) {
-            this.generatedPagesImages = {};
-            this.saveCurrentSessionState();
-        }
-        const comicStyle = this.comicStyleSelect.value;
-        const originalPageIndex = this.pageManager.getCurrentPageIndex();
-
-        try {
-            // Disable buttons during generation - only disable and add spinner, no text change
-            this.generateAllBtn.disabled = true;
-            this.generateAllBtn.classList.add('loading');
-            if (this.resumeGenerationBtn) {
-                this.resumeGenerationBtn.disabled = true;
-                this.resumeGenerationBtn.classList.add('loading');
-            }
-
-            for (const i of pagesToGenerate) {
-                // Update status with spinner
-                this.showStatus(window.i18n.t('statusGeneratingPage', { current: i + 1, total: totalPages }), 'info');
-
-                // Navigate to the page
-                this.pageManager.setCurrentPageIndex(i);
-                this.loadCurrentPage();
-                const rendered = this.renderComic();
-                if (!rendered) {
-                    throw new Error(`Page ${i + 1} JSON render failed`);
-                }
-
-                // Wait for rendering
-                await this._delay(300);
-
-                // Get current page data
-                const pageData = this.pageManager.getCurrentPage();
-                const rowsPerPage = Array.isArray(pageData.rows) && pageData.rows.length > 0
-                    ? pageData.rows.length
-                    : (parseInt(this.rowsPerPageSelect.value) || 4);
-
-                // Get current sketch as base64 (layout only)
-                const element = this.renderer.getContainer();
-                const sketchBase64 = await ComicExporter.getBase64WithoutText(element);
-
-                // Prepare reference images (use previous 6 generated pages from member variable)
-                let previousPages = null;
-                const prevImages = Object.values(this.generatedPagesImages)
-                    .filter(img => img.pageIndex < i)
-                    .sort((a, b) => b.pageIndex - a.pageIndex)
-                    .slice(0, 6)
-                    .reverse()
-                    .map(page => {
-                        // Handle new version format
-                        if (page.versions && page.versions.length > 0) {
-                            const currentVersionIndex = page.currentVersion || 0;
-                            const currentVersionData = page.versions[currentVersionIndex];
-                            if (currentVersionData && currentVersionData.imageUrl) {
-                                return {
-                                    pageIndex: page.pageIndex,
-                                    imageUrl: currentVersionData.imageUrl,
-                                    pageTitle: page.pageTitle
-                                };
-                            }
-                        }
-                        // Handle legacy format - return as is
-                        if (page.imageUrl) {
-                            return page;
-                        }
-                        return null;
-                    })
-                    .filter(page => page !== null);
-                if (prevImages.length > 0) {
-                    previousPages = prevImages;
-                }
-
-                // Add user uploaded reference image if available
-                if (this.referenceImage) {
-                    if (!previousPages) previousPages = [];
-                    previousPages.unshift(this.referenceImage);
-                }
-
-                // Generate image with sketch and previous pages as reference
-                // Pass sketch as reference_img and previous pages as extra_body
-                const result = await ComicAPI.generateComicImage(
-                    pageData,
-                    sketchBase64,
-                    previousPages,  // Pass previous pages as extra_body parameter
-                    comicStyle,
-                    rowsPerPage,
-                    this.comicLanguageSelect.value,
-                    imageConfig,
-                    this.getComicBrainSource(),
-                    this.getComicBrainRenderMetadata(i, pageData)
-                );
-
-                if (result.success && result.image_url) {
-                    // Store the generated image with version history (same logic as generateFinalImage)
-                    const timestamp = Date.now();
-                    const pageTitle = pageData.title || `Page ${i + 1}`;
-
-                    // Check if we already have versions for this page
-                    if (!this.generatedPagesImages[i]) {
-                        // First generation - create new entry
-                        this.generatedPagesImages[i] = {
-                            pageIndex: i,
-                            pageTitle: pageTitle,
-                            currentVersion: 0,
-                            versions: [{
-                                imageUrl: result.image_url,
-                                timestamp: timestamp,
-                                version: 1
-                            }]
-                        };
-                    } else {
-                        // Subsequent generation - append new version
-                        const existingPageData = this.generatedPagesImages[i];
-
-                        // Handle legacy format (single image object) - convert to version array
-                        if (existingPageData.imageUrl && !existingPageData.versions) {
-                            existingPageData.versions = [{
-                                imageUrl: existingPageData.imageUrl,
-                                timestamp: existingPageData.timestamp || Date.now() - 1000,
-                                version: 1
-                            }];
-                            delete existingPageData.imageUrl;
-                            delete existingPageData.timestamp;
-                        }
-
-                        // Add new version
-                        const newVersion = existingPageData.versions.length + 1;
-                        existingPageData.versions.push({
-                            imageUrl: result.image_url,
-                            timestamp: timestamp,
-                            version: newVersion
-                        });
-
-                        // Set current version to the latest
-                        existingPageData.currentVersion = existingPageData.versions.length - 1;
-                        existingPageData.pageTitle = pageTitle;
-                    }
-
-                    StoryboardImageReconciler.stampGeneratedImage(
-                        this.generatedPagesImages[i],
-                        pageData
-                    );
-
-                    // Show the generated image on canvas with flip animation
-                    await this.showGeneratedImageOnCanvas(i);
-
-                    // Save session state after each page generation
-                    this.saveCurrentSessionState();
-                } else {
-                    throw new Error(`第 ${i + 1} 页生成失败`);
-                }
-
-                // Small delay between generations
-                await this._delay(500);
-            }
-
-            // Restore original page
-            this.pageManager.setCurrentPageIndex(originalPageIndex);
-
-            console.log('[Batch Generation] Complete! Generated images:', this.generatedPagesImages);
-            console.log('[Batch Generation] Total images generated:', Object.keys(this.generatedPagesImages).length);
-
-            this.loadCurrentPage();
-
-            // Show success
-            this.showStatus(window.i18n.t('statusAllSuccess', { total: totalPages }), 'success');
-            // No longer showing gallery popup as images are displayed on canvas
-            // const allImages = Object.values(this.generatedPagesImages).sort((a, b) => a.pageIndex - b.pageIndex);
-            // this.displayAllGeneratedImages(allImages);
-
-            // Enable cover generation button
-            const coverBtn = document.getElementById('generate-cover-btn');
-            if (coverBtn) {
-                coverBtn.style.display = 'inline-flex'; // Ensure it's visible
-                coverBtn.disabled = false;
-            }
-
-        } catch (error) {
-            console.error('Batch generation failed:', error);
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-
-            // Restore original page
-            this.pageManager.setCurrentPageIndex(originalPageIndex);
-            this.loadCurrentPage();
-
-            // If some images were generated, still show them
-            const partialImages = Object.values(this.generatedPagesImages)
-                .filter(page => page && this.hasGeneratedPageImage(page.pageIndex))
-                .sort((a, b) => a.pageIndex - b.pageIndex);
-            if (partialImages.length > 0) {
-                alert(window.i18n.t('alertBatchError', { success: partialImages.length, total: totalPages, error: error.message }));
-            } else {
-                alert(window.i18n.t('alertBatchFailed', { error: error.message }));
-            }
-        } finally {
-            // Restore button state - only remove disabled and loading class
-            this.generateAllBtn.disabled = false;
-            this.generateAllBtn.classList.remove('loading');
-            if (this.resumeGenerationBtn) {
-                this.resumeGenerationBtn.disabled = false;
-                this.resumeGenerationBtn.classList.remove('loading');
-            }
-            this.updateBatchGenerationButtons();
-
-            // Explicitly show flip button if images were generated
-            if (Object.keys(this.generatedPagesImages).length > 0) {
-                if (this.toggleViewBtn) this.toggleViewBtn.style.display = 'inline-flex';
-            }
-        }
-    }
-
-
-
-    /**
-     * Delay helper
-     * @param {number} ms - Milliseconds to delay
-     * @returns {Promise} Promise that resolves after delay
-     */
-    _delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    /**
-     * Show generated image on the comic canvas directly with a flip animation
-     * @param {number} pageIndex - Index of the page to display
-     */
-    async showGeneratedImageOnCanvas(pageIndex) {
-        const comicPage = document.getElementById('comic-page');
-        if (!comicPage) return;
-
-        const pageData = this.generatedPagesImages[pageIndex];
-        if (!pageData) return;
-
-        // Handle legacy format
-        if (pageData.imageUrl && !pageData.versions) {
-            pageData.versions = [{
-                imageUrl: pageData.imageUrl,
-                timestamp: pageData.timestamp || Date.now(),
-                version: 1
-            }];
-            pageData.currentVersion = 0;
-            delete pageData.imageUrl;
-            delete pageData.timestamp;
-        }
-
-        const currentVersionIndex = pageData.currentVersion || 0;
-        const currentVersionData = pageData.versions[currentVersionIndex];
-        if (!currentVersionData) return;
-
-        const imageUrl = currentVersionData.imageUrl;
-        const versionNumber = currentVersionData.version;
-
-        // 1. Flip out
-        comicPage.classList.add('flip-out');
-
-        // 2. Wait for half animation (rotate to 90deg)
-        await this._delay(600);
-
-        // 3. Swap content
-        comicPage.innerHTML = '';
-
-        // Create container for image and button
-        const container = document.createElement('div');
-        container.className = 'generated-image-container';
-
-        // Create image
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        img.className = 'generated-comic-image';
-        img.title = window.i18n ? window.i18n.t('doubleClickToEdit') || 'Double-click to edit script' : 'Double-click to edit script';
-        img.style.cursor = 'pointer';
-
-        // Add double-click handler to switch back to script view
-        img.addEventListener('dblclick', () => {
-            if (this.isViewingImage && !this.isGenerating) {
-                this.toggleView();
-            }
-        });
-
-        // Create download button
-        const downloadBtn = document.createElement('div');
-        downloadBtn.className = 'overlay-download-btn';
-        downloadBtn.title = window.i18n.t('btnDownloadImage');
-        downloadBtn.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <polyline points="7 10 12 15 17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-        `;
-        downloadBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.downloadImageFromUrl(imageUrl);
-        };
-
-        container.appendChild(img);
-        container.appendChild(downloadBtn);
-        comicPage.appendChild(container);
-
-        // Ensure scroll to top
-        comicPage.scrollTop = 0;
-
-        // 4. Flip in
-        comicPage.classList.remove('flip-out');
-        comicPage.classList.add('flip-in');
-
-        // 5. Cleanup classes after animation
-        await this._delay(800);
-        comicPage.classList.remove('flip-in');
-    }
-
-    /**
-     * Display generated image directly on canvas without animation (for navigation)
-     * @param {number} pageIndex - Index of the page to display
-     */
-    displayImageDirectly(pageIndex) {
-        const comicPage = document.getElementById('comic-page');
-        if (!comicPage) return;
-
-        const pageData = this.generatedPagesImages[pageIndex];
-        if (!pageData) return;
-
-        // Handle legacy format
-        if (pageData.imageUrl && !pageData.versions) {
-            pageData.versions = [{
-                imageUrl: pageData.imageUrl,
-                timestamp: pageData.timestamp || Date.now(),
-                version: 1
-            }];
-            pageData.currentVersion = 0;
-            delete pageData.imageUrl;
-            delete pageData.timestamp;
-        }
-
-        const currentVersionIndex = pageData.currentVersion || 0;
-        const currentVersionData = pageData.versions[currentVersionIndex];
-        if (!currentVersionData) return;
-
-        const imageUrl = currentVersionData.imageUrl;
-        const versionNumber = currentVersionData.version;
-
-        comicPage.innerHTML = '';
-
-        // Create container for image and button
-        const container = document.createElement('div');
-        container.className = 'generated-image-container';
-
-        // Create image
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        img.className = 'generated-comic-image';
-        img.title = window.i18n ? window.i18n.t('doubleClickToEdit') || 'Double-click to edit script' : 'Double-click to edit script';
-        img.style.cursor = 'pointer';
-
-        // Add double-click handler to switch back to script view
-        img.addEventListener('dblclick', () => {
-            if (this.isViewingImage && !this.isGenerating) {
-                this.toggleView();
-            }
-        });
-
-        // Create download button
-        const downloadBtn = document.createElement('div');
-        downloadBtn.className = 'overlay-download-btn';
-        downloadBtn.title = window.i18n.t('btnDownloadImage');
-        downloadBtn.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <polyline points="7 10 12 15 17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-        `;
-        downloadBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.downloadImageFromUrl(imageUrl);
-        };
-
-        container.appendChild(img);
-        container.appendChild(downloadBtn);
-        comicPage.appendChild(container);
-
-        // Ensure scroll to top
-        comicPage.scrollTop = 0;
-    }
-
-
-
-    /**
-     * Download image from URL
-     * @param {string} imageUrl - URL of the image to download
-     */
-    async downloadImageFromUrl(imageUrl) {
-        try {
-            try {
-                const response = await fetch(imageUrl, { mode: 'cors' });
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const blobUrl = window.URL.createObjectURL(blob);
-
-                    const a = document.createElement('a');
-                    a.href = blobUrl;
-                    a.download = `comic-final-${Date.now()}.png`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(blobUrl);
-                    return;
-                }
-            } catch (directError) {
-                console.warn('Direct download failed:', directError);
-            }
-
-            // Last resort: open in new tab (user can right-click save)
-            window.open(imageUrl, '_blank');
-            alert(window.i18n.t('alertDownloadAlt'));
-
-        } catch (error) {
-            console.error('Download failed:', error);
-            alert(window.i18n.t('alertDownloadFailed'));
-        }
-    }
-
-    /**
-     * Show status message
-     * @param {string} message - Status message
-     * @param {string} type - Message type (info, success, error)
-     */
-    showStatus(message, type = 'info') {
-        this.aiStatus.style.display = 'block';
-        this.aiStatus.innerText = message;
-
-        switch (type) {
-            case 'success':
-                this.aiStatus.style.color = '#28a745';
-                break;
-            case 'error':
-                this.aiStatus.style.color = '#dc3545';
-                break;
-            default:
-                this.aiStatus.style.color = '#666';
-        }
-    }
-
-    /**
-     * Hide status message
-     */
-    hideStatus() {
-        this.aiStatus.style.display = 'none';
-    }
-
-    /**
-     * Generate social media post content (Xiaohongshu for Chinese, Twitter for English)
-     */
-    async generateXiaohongshuContent() {
-        const apiKey = this.apiKeyInput.value.trim();
-        const googleApiKey = this.googleApiKeyInput.value.trim();
-        const config = ConfigManager.getCurrentConfig();
-
-        if (!this.validateTextGenerationConfig(config, apiKey, googleApiKey)) {
-            return;
-        }
-
-        const comicData = this.pageManager.getAllPages();
-
-        if (!comicData || comicData.length === 0) {
-            alert(window.i18n.t('alertNoComicData'));
-            return;
-        }
-
-        // Determine platform based on UI language
-        const currentLang = window.i18n ? window.i18n.getLanguage() : 'en';
-        const platform = currentLang === 'zh' ? 'xiaohongshu' : 'twitter';
-
-        // Get the button element
-        const xiaohongshuBtn = document.getElementById('xiaohongshu-btn');
-
-        try {
-            // Add loading state - only disable and add spinner, no text change
-            if (xiaohongshuBtn) {
-                xiaohongshuBtn.disabled = true;
-                xiaohongshuBtn.classList.add('loading');
-            }
-
-            this.showStatus(window.i18n.t('statusSocialMedia'), 'info');
-
-            const result = await ComicAPI.generateSocialMediaContent(
-                apiKey,
-                comicData,
-                config.baseUrl,
-                config.model,
-                config.textProvider,
-                config.reasoningEffort,
-                platform,
-                googleApiKey
-            );
-
-            if (result.success) {
-                this.displaySocialMediaContent(result.title, result.content, result.tags, platform);
-                this.showStatus(window.i18n.t('statusSocialMediaSuccess'), 'success');
-                setTimeout(() => this.hideStatus(), 3000);
-            } else {
-                throw new Error('Content generation failed');
-            }
-
-        } catch (error) {
-            console.error('Social media content generation failed:', error);
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-            alert(window.i18n.t('statusError', { error: error.message }));
-        } finally {
-            // Restore button state - only remove disabled and loading class
-            if (xiaohongshuBtn) {
-                xiaohongshuBtn.disabled = false;
-                xiaohongshuBtn.classList.remove('loading');
-            }
-        }
-    }
-
-    /**
-     * Display social media content in a modal
-     * @param {string} title - Post title
-     * @param {string} content - Post content
-     * @param {Array} tags - Post tags
-     * @param {string} platform - Platform type ('xiaohongshu' or 'twitter')
-     */
-    displaySocialMediaContent(title, content, tags, platform = 'xiaohongshu') {
-        // Create modal overlay
-        const modal = document.createElement('div');
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-            padding: 20px;
-        `;
-
-        // Create content container
-        const container = document.createElement('div');
-        container.style.cssText = `
-            max-width: 600px;
-            width: 100%;
-            max-height: 80vh;
-            background: white;
-            padding: 30px;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            overflow-y: auto;
-        `;
-
-        // Create header with platform-specific title
-        const header = document.createElement('div');
-        header.style.cssText = `
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            color: #1d1d1f;
-            text-align: center;
-        `;
-        const modalTitleKey = platform === 'twitter' ? 'modalTwitterTitle' : 'modalXiaohongshuTitle';
-        header.innerText = window.i18n.t(modalTitleKey);
-
-        // Create title section
-        const titleSection = document.createElement('div');
-        titleSection.style.cssText = `
-            margin-bottom: 20px;
-        `;
-
-        const titleLabel = document.createElement('div');
-        titleLabel.style.cssText = `
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #666;
-            font-size: 14px;
-        `;
-        titleLabel.innerText = window.i18n.t('modalTitleLabel');
-
-        const titleText = document.createElement('div');
-        titleText.style.cssText = `
-            padding: 12px;
-            background: #f5f5f7;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            color: #1d1d1f;
-            line-height: 1.5;
-        `;
-        titleText.innerText = title;
-
-        titleSection.appendChild(titleLabel);
-        titleSection.appendChild(titleText);
-
-        // Create content section
-        const contentSection = document.createElement('div');
-        contentSection.style.cssText = `
-            margin-bottom: 20px;
-        `;
-
-        const contentLabel = document.createElement('div');
-        contentLabel.style.cssText = `
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #666;
-            font-size: 14px;
-        `;
-        contentLabel.innerText = window.i18n.t('modalContentLabel');
-
-        const contentText = document.createElement('div');
-        contentText.style.cssText = `
-            padding: 12px;
-            background: #f5f5f7;
-            border-radius: 8px;
-            font-size: 14px;
-            color: #1d1d1f;
-            line-height: 1.8;
-            white-space: pre-wrap;
-        `;
-        contentText.innerText = content;
-
-        contentSection.appendChild(contentLabel);
-        contentSection.appendChild(contentText);
-
-        // Create tags section
-        const tagsSection = document.createElement('div');
-        tagsSection.style.cssText = `
-            margin-bottom: 20px;
-        `;
-
-        const tagsLabel = document.createElement('div');
-        tagsLabel.style.cssText = `
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #666;
-            font-size: 14px;
-        `;
-        tagsLabel.innerText = window.i18n.t('modalTagsLabel');
-
-        const tagsContainer = document.createElement('div');
-        tagsContainer.style.cssText = `
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        `;
-
-        tags.forEach(tag => {
-            const tagElement = document.createElement('span');
-            tagElement.style.cssText = `
-                padding: 6px 12px;
-                background: #007aff;
-                color: white;
-                border-radius: 16px;
-                font-size: 13px;
-            `;
-            tagElement.innerText = '#' + tag;
-            tagsContainer.appendChild(tagElement);
-        });
-
-        tagsSection.appendChild(tagsLabel);
-        tagsSection.appendChild(tagsContainer);
-
-        // Create action buttons
-        const actions = document.createElement('div');
-        actions.style.cssText = `
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        `;
-
-        const copyBtn = document.createElement('button');
-        copyBtn.innerText = window.i18n.t('btnCopyAll');
-        copyBtn.style.cssText = `
-            flex: 1;
-            padding: 12px;
-            background-color: #34c759;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 15px;
-            font-weight: 600;
-        `;
-        copyBtn.onclick = () => {
-            const fullText = `${title}\n\n${content}\n\n${tags.map(t => '#' + t).join(' ')}`;
-            navigator.clipboard.writeText(fullText).then(() => {
-                copyBtn.innerText = window.i18n.t('btnCopied');
-                setTimeout(() => {
-                    copyBtn.innerText = window.i18n.t('btnCopyAll');
-                }, 2000);
-            }).catch(err => {
-                alert(window.i18n.t('alertCopyFailed'));
-            });
-        };
-
-        const closeBtn = document.createElement('button');
-        closeBtn.innerText = window.i18n.t('btnClose');
-        closeBtn.style.cssText = `
-            flex: 1;
-            padding: 12px;
-            background-color: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 15px;
-            font-weight: 600;
-        `;
-        closeBtn.onclick = () => {
-            document.body.removeChild(modal);
-        };
-
-        actions.appendChild(copyBtn);
-        actions.appendChild(closeBtn);
-
-        // Assemble modal
-        container.appendChild(header);
-        container.appendChild(titleSection);
-        container.appendChild(contentSection);
-        container.appendChild(tagsSection);
-        container.appendChild(actions);
-        modal.appendChild(container);
-
-        // Close on background click
-        modal.onclick = (e) => {
-            if (e.target === modal) {
-                document.body.removeChild(modal);
-            }
-        };
-
-        // Add to page
-        document.body.appendChild(modal);
-    }
-
-    /**
-     * Show cover customization panel
-     */
-    showCoverCustomPanel() {
-        const panel = document.getElementById('cover-custom-panel');
-        if (panel) {
-            panel.style.display = 'block';
-            // Focus on the input
-            const input = document.getElementById('cover-custom-input');
-            if (input) {
-                const comicBrainRequirements = this.buildComicBrainCoverRequirements();
-                if (!input.value.trim() && comicBrainRequirements) {
-                    input.value = comicBrainRequirements;
-                    this.saveCurrentSessionState();
-                }
-                setTimeout(() => input.focus(), 100);
-            }
-            // Add click outside to close
-            setTimeout(() => {
-                document.addEventListener('click', this.handleClickOutsideCoverPanel);
-            }, 100);
-        }
-    }
-
-    /**
-     * Hide cover customization panel
-     */
-    hideCoverCustomPanel() {
-        const panel = document.getElementById('cover-custom-panel');
-        if (panel) {
-            panel.style.display = 'none';
-            document.removeEventListener('click', this.handleClickOutsideCoverPanel);
-        }
-    }
-
-    /**
-     * Handle click outside cover panel to close it
-     */
-    handleClickOutsideCoverPanel = (event) => {
-        const panel = document.getElementById('cover-custom-panel');
-        const btn = document.getElementById('generate-cover-btn');
-        if (panel && !panel.contains(event.target) && !btn.contains(event.target)) {
-            this.hideCoverCustomPanel();
-        }
-    }
-
-    /**
-     * Generate comic cover with custom requirements
-     */
-    async generateCoverWithCustom() {
-        const imageConfig = this.getImageGenerationConfig();
-        if (!this.validateImageGenerationConfig(imageConfig)) {
-            return;
-        }
-
-        // Get custom requirements from textarea
-        const customInput = document.getElementById('cover-custom-input');
-        const customRequirements = customInput ? customInput.value.trim() : '';
-
-        // Hide the panel
-        this.hideCoverCustomPanel();
-
-        const coverBtn = document.getElementById('generate-cover-btn');
-        const originalText = coverBtn.innerHTML;
-
-        try {
-            if (coverBtn) {
-                coverBtn.disabled = true;
-                coverBtn.classList.add('loading');
-            }
-
-            this.showStatus(window.i18n.t('statusGeneratingCover') || 'Generating cover...', 'info');
-
-            const comicStyle = this.comicStyleSelect.value;
-            const language = this.comicLanguageSelect.value;
-
-            // Collect all generated page images as references
-            const referenceImages = [];
-            if (this.generatedPagesImages) {
-                console.log('[Cover] generatedPagesImages:', this.generatedPagesImages);
-                console.log('[Cover] generatedPagesImages keys:', Object.keys(this.generatedPagesImages));
-
-                // Get all page objects and sort by index
-                const sortedPages = Object.values(this.generatedPagesImages)
-                    .sort((a, b) => a.pageIndex - b.pageIndex);
-
-                console.log('[Cover] Sorted pages:', sortedPages);
-
-                // Add full page objects to reference list
-                sortedPages.forEach(page => {
-                    if (page) {
-                        // Handle new version format
-                        if (page.versions && page.versions.length > 0) {
-                            const currentVersionIndex = page.currentVersion || 0;
-                            const currentVersionData = page.versions[currentVersionIndex];
-                            if (currentVersionData && currentVersionData.imageUrl) {
-                                // Create a page object with the current version's imageUrl
-                                referenceImages.push({
-                                    pageIndex: page.pageIndex,
-                                    imageUrl: currentVersionData.imageUrl,
-                                    pageTitle: page.pageTitle
-                                });
-                            }
-                        }
-                        // Handle legacy format
-                        else if (page.imageUrl) {
-                            referenceImages.push(page);
-                        }
-                    }
-                });
-            }
-
-            // Add user uploaded reference image if available
-            if (this.referenceImage) {
-                referenceImages.unshift(this.referenceImage);
-            }
-
-            console.log('[Cover] Reference images to send:', referenceImages);
-            console.log('[Cover] Custom requirements:', customRequirements);
-
-            // Call API
-            const result = await ComicAPI.generateCover(
-                comicStyle,
-                referenceImages,
-                language,
-                customRequirements,
-                imageConfig,
-                this.getComicBrainSource()
-            );
-
-            if (result.success && result.image_url) {
-                this.showStatus(window.i18n.t('statusCoverSuccess') || 'Cover generated successfully!', 'success');
-                setTimeout(() => this.hideStatus(), 3000);
-
-                // Display result
-                this.displayGeneratedImage(result.image_url);
-            } else {
-                throw new Error(result.error || 'Generaton failed');
-            }
-
-        } catch (error) {
-            console.error('Cover generation failed:', error);
-            this.showStatus(window.i18n.t('statusError', { error: error.message }), 'error');
-            alert(window.i18n.t('errorCoverFailed') || `Cover generation failed: ${error.message}`);
-        } finally {
-            if (coverBtn) {
-                coverBtn.disabled = false;
-                coverBtn.classList.remove('loading');
-            }
-        }
-    }
-
-    /**
-     * Display a status scoped to the ComicBrain bridge.
-     */
-    setComicBrainStatus(message, type = '') {
-        if (!this.comicBrainStatus) return;
-        this.comicBrainStatus.textContent = message || '';
-        this.comicBrainStatus.className = 'comicbrain-status' + (type ? ` ${type}` : '');
-    }
-
-    /**
-     * Return a localized bridge message without coupling dynamic statuses to i18n keys.
-     */
-    comicBrainText(zhText, enText) {
-        const language = window.i18n && typeof window.i18n.getLanguage === 'function'
-            ? window.i18n.getLanguage()
-            : 'zh';
-        return language === 'zh' ? zhText : enText;
-    }
-
-    /**
-     * Refresh ComicBrain storyboard packages.
-     */
-    async refreshComicBrainProjects() {
-        if (!this.comicBrainProjectSelect) return;
-
-        this.comicBrainProjectSelect.disabled = true;
-        if (this.comicBrainRefreshBtn) this.comicBrainRefreshBtn.disabled = true;
-        if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = true;
-        this.setComicBrainStatus(
-            this.comicBrainText('正在读取内置 ComicBrain 项目…', 'Reading the embedded ComicBrain workspace…'),
-            'saving'
-        );
-
-        try {
-            this.comicBrainProjects = await ComicAPI.listComicBrainProjects();
-            this.comicBrainProjectSelect.innerHTML = '';
-
-            if (this.comicBrainProjects.length === 0) {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = window.i18n ? window.i18n.t('comicBrainEmpty') : '暂无可载入的分镜';
-                this.comicBrainProjectSelect.appendChild(option);
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        '暂无 production 分镜；先在 ComicBrain 导出章节。',
-                        'No production storyboard yet. Export a chapter from ComicBrain first.'
-                    )
-                );
-                return;
-            }
-
-            const placeholder = document.createElement('option');
-            placeholder.value = '';
-            placeholder.textContent = window.i18n ? window.i18n.t('comicBrainChoose') : '选择一个系列与章节';
-            this.comicBrainProjectSelect.appendChild(placeholder);
-
-            this.comicBrainProjects.forEach((project, index) => {
-                const option = document.createElement('option');
-                const seriesId = project.series_id || project.seriesId || '';
-                const chapterId = project.chapter_id || project.chapterId || '';
-                const title = project.title || project.chapter_title || chapterId;
-                const seriesTitle = project.series_title || seriesId;
-                const reviewBadge = project.has_review
-                    ? (project.review_stale
-                        ? this.comicBrainText('（草稿过期）', '(draft stale)')
-                        : this.comicBrainText('（有草稿）', '(has draft)'))
-                    : '';
-
-                option.value = String(index);
-                option.dataset.seriesId = seriesId;
-                option.dataset.chapterId = chapterId;
-                const projectLabel = seriesTitle && title && seriesTitle !== title
-                    ? `${seriesTitle} · ${title}`
-                    : (title || `${seriesId} / ${chapterId}`);
-                option.textContent = reviewBadge ? `${projectLabel} ${reviewBadge}` : projectLabel;
-                this.comicBrainProjectSelect.appendChild(option);
-            });
-
-            this.comicBrainProjectSelect.disabled = false;
-            this.syncComicBrainUIFromSession();
-
-            if (!this.getComicBrainSource()) {
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        `发现 ${this.comicBrainProjects.length} 个可载入分镜。`,
-                        `${this.comicBrainProjects.length} storyboard(s) available.`
-                    ),
-                    'success'
-                );
-            }
-        } catch (error) {
-            this.comicBrainProjects = [];
-            this.comicBrainProjectSelect.innerHTML = '';
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = this.comicBrainText('ComicBrain 暂不可用', 'ComicBrain unavailable');
-            this.comicBrainProjectSelect.appendChild(option);
-            this.setComicBrainStatus(
-                this.comicBrainText(
-                    `无法读取 ComicBrain：${error.message}`,
-                    `Could not read ComicBrain: ${error.message}`
-                ),
-                'error'
-            );
-        } finally {
-            if (this.comicBrainRefreshBtn) this.comicBrainRefreshBtn.disabled = false;
-            if (this.comicBrainProjects.length > 0) {
-                this.comicBrainProjectSelect.disabled = false;
-            }
-            if (this.comicBrainLoadBtn) {
-                this.comicBrainLoadBtn.disabled = !this.comicBrainProjectSelect.value;
-            }
-        }
-    }
-
-    /**
-     * Load the selected ComicBrain package into its own reusable local session.
-     */
-    async loadComicBrainProject() {
-        if (!this.comicBrainProjectSelect || !this.comicBrainProjectSelect.value) return;
-
-        const selectedOption = this.comicBrainProjectSelect.options[this.comicBrainProjectSelect.selectedIndex];
-        const summary = this.comicBrainProjects[Number(this.comicBrainProjectSelect.value)] || {};
-        const seriesId = selectedOption.dataset.seriesId || summary.series_id || summary.seriesId;
-        const chapterId = selectedOption.dataset.chapterId || summary.chapter_id || summary.chapterId;
-        if (!seriesId || !chapterId) {
-            this.setComicBrainStatus(
-                this.comicBrainText('项目缺少系列或章节 ID，无法载入。', 'The project is missing a series or chapter ID.'),
-                'error'
-            );
-            return;
-        }
-
-        if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = true;
-        this.setComicBrainStatus(
-            this.comicBrainText('正在载入分镜与 review 草稿…', 'Loading storyboard and review draft…'),
-            'saving'
-        );
-
-        try {
-            const response = await ComicAPI.getComicBrainProject(seriesId, chapterId);
-            const storyboard = response.project;
-            const review = response.review;
-            if (!storyboard || !Array.isArray(storyboard.pages) || storyboard.pages.length === 0) {
-                throw new Error(this.comicBrainText('分镜包没有可用页面', 'The storyboard package has no pages'));
-            }
-
-            const storyboardSource = storyboard.source || {};
-            const reviewSource = review && review.source ? review.source : {};
-            const reviewIdsMatch = !!review
-                && (reviewSource.series_id || reviewSource.seriesId) === seriesId
-                && (reviewSource.chapter_id || reviewSource.chapterId) === chapterId;
-            const storyboardSnapshotHash = storyboardSource.snapshot_hash || storyboard.snapshot_hash;
-            const storyboardSourceHash = storyboardSource.source_hash || storyboard.source_hash;
-            const reviewSnapshotHash = reviewSource.snapshot_hash || (review && review.snapshot_hash);
-            const reviewSourceHash = reviewSource.source_hash || (review && review.source_hash);
-            const storyboardFingerprint = storyboardSnapshotHash || storyboardSourceHash;
-            const reviewFingerprint = reviewSnapshotHash || reviewSourceHash;
-            const hashesMatch = !!storyboardFingerprint
-                && !!reviewFingerprint
-                && storyboardFingerprint === reviewFingerprint;
-            const hasBackendStaleDecision = typeof response.reviewStale === 'boolean';
-            const reviewIsFresh = hasBackendStaleDecision
-                ? response.reviewStale === false
-                : hashesMatch;
-            const restoreReview = !!review
-                && reviewIdsMatch
-                && Array.isArray(review.pages)
-                && review.pages.length > 0
-                && reviewIsFresh;
-            const staleReview = !!review && !restoreReview;
-
-            let packageToLoad = storyboard;
-            if (restoreReview) {
-                packageToLoad = { ...storyboard };
-                Object.entries(review).forEach(([key, value]) => {
-                    if (value !== undefined) packageToLoad[key] = value;
-                });
-                packageToLoad.source = { ...(storyboard.source || {}), ...(review.source || {}) };
-                packageToLoad.settings = { ...(storyboard.settings || {}), ...(review.settings || {}) };
-                if (review.cover == null) packageToLoad.cover = storyboard.cover;
-                if (!Array.isArray(review.characters)) packageToLoad.characters = storyboard.characters;
-            }
-
-            const pages = packageToLoad.pages;
-            const metadata = { ...packageToLoad };
-            delete metadata.pages;
-
-            // Save the previous session before selecting or creating the project's
-            // dedicated working session.
-            this.saveCurrentSessionState();
-            let targetSession = this.sessionManager.getAllSessions().find((session) => {
-                const project = session.comicBrainProject;
-                return project && project.seriesId === seriesId && project.chapterId === chapterId;
-            });
-
-            const currentSession = this.sessionManager.getCurrentSession();
-            const existingTargetSession = targetSession;
-            const previousSource = existingTargetSession
-                && existingTargetSession.comicBrainProject
-                && existingTargetSession.comicBrainProject.metadata
-                && existingTargetSession.comicBrainProject.metadata.source;
-            const previousSnapshotHash = previousSource && previousSource.snapshot_hash;
-            const renderSnapshotHash = response.renders
-                && response.renders.source
-                && response.renders.source.snapshot_hash;
-            // A changed ComicBrain snapshot can replace character references
-            // without changing any panel text. Old renders must be generated again.
-            const localImages = existingTargetSession
-                && previousSnapshotHash === storyboardSnapshotHash
-                ? (existingTargetSession.generatedImages || {})
-                : {};
-            const persistedImages = renderSnapshotHash === storyboardSnapshotHash
-                ? StoryboardImageReconciler.imagesFromRenderManifest(
-                    response.renders,
-                    pages,
-                    storyboardSnapshotHash
-                )
-                : {};
-            const existingImages = {
-                ...persistedImages,
-                ...localImages
-            };
-            const previousScriptHash = previousSource && previousSource.source_hash;
-            const scriptSourceUnchanged = !!storyboardSourceHash
-                && !!previousScriptHash
-                && storyboardSourceHash === previousScriptHash;
-            const previousPages = existingTargetSession
-                && existingTargetSession.comicData
-                && Array.isArray(existingTargetSession.comicData.pages)
-                ? existingTargetSession.comicData.pages
-                : [];
-            const imageReconciliation = StoryboardImageReconciler.reconcile(
-                previousPages,
-                pages,
-                existingImages,
-                { allowLegacyScriptMatch: scriptSourceUnchanged }
-            );
-            const generatedImages = imageReconciliation.generatedImages;
-            const hadExistingImages = Object.values(existingImages)
-                .some(entry => StoryboardImageReconciler.hasUsableImage(entry));
-            let imageLoadSummary = '';
-            if (hadExistingImages) {
-                const preservedCount = imageReconciliation.preservedPageIndices.length;
-                const pendingCount = imageReconciliation.pendingPageIndices.length;
-                if (pendingCount === 0) {
-                    imageLoadSummary = this.comicBrainText(
-                        `；已保留全部 ${preservedCount} 页图片`,
-                        `; kept all ${preservedCount} page image(s)`
-                    );
-                } else {
-                    imageLoadSummary = this.comicBrainText(
-                        `；保留 ${preservedCount} 页图片，${pendingCount} 页待生成`,
-                        `; kept ${preservedCount} page image(s), ${pendingCount} page(s) pending`
-                    );
-                }
-            }
-            const settings = packageToLoad.settings || {};
-            const requestedStyle = settings.comic_style || settings.style;
-            const requestedLanguage = settings.language;
-            const requestedImageSize = settings.image_size;
-            const fallbackSession = existingTargetSession || currentSession;
-            const style = this.hasSelectOption(this.comicStyleSelect, requestedStyle)
-                ? requestedStyle
-                : ((fallbackSession && fallbackSession.style) || 'doraemon');
-            const language = this.hasSelectOption(this.comicLanguageSelect, requestedLanguage)
-                ? requestedLanguage
-                : ((fallbackSession && fallbackSession.language) || 'zh');
-            const firstPageRows = Array.isArray(pages[0] && pages[0].rows) ? pages[0].rows.length : 4;
-            const rowsPerPage = Math.max(1, Math.min(5, Number(settings.rows_per_page) || firstPageRows || 4));
-            const coverCustomRequirements = settings.cover_custom_requirements
-                || (existingTargetSession && existingTargetSession.coverCustomRequirements)
-                || '';
-            const sessionName = packageToLoad.title || summary.title || summary.chapter_title || `${seriesId} · ${chapterId}`;
-
-            if (!targetSession) {
-                targetSession = this.sessionManager.createSession(sessionName, {
-                    style,
-                    language,
-                    pageCount: pages.length,
-                    rowsPerPage
-                });
-            }
-
-            if (!currentSession || currentSession.id !== targetSession.id) {
-                this.sessionManager.switchSession(targetSession.id);
-            }
-
-            this.sessionManager.updateSession(targetSession.id, {
-                name: sessionName,
-                comicData: {
-                    pages,
-                    pageCount: pages.length
+    return list;
+  }
+  works() {
+    return this.visibleDrafts().flatMap((d) =>
+      d.chapters?.length
+        ? d.chapters.map((ch, index) =>
+            index === d.chapterIndex
+              ? { ...d, workPath: d.id + "/" + index }
+              : {
+                  ...d,
+                  title: ch.title,
+                  pages: ch.pages || [],
+                  aiPages: ch.aiPages || null,
+                  futureGuidance: ch.futureGuidance || "",
+                  images: ch.images || {},
+                  storyDirty: ch.storyDirty,
+                  coverImages: ch.coverImages || [],
+                  workPath: d.id + "/" + index,
                 },
-                generatedImages,
-                currentPageIndex: 0,
-                style,
-                language,
-                pageCount: pages.length,
-                rowsPerPage,
-                coverCustomRequirements,
-                comicBrainProject: {
-                    seriesId,
-                    chapterId,
-                    title: sessionName,
-                    metadata,
-                    importedAt: new Date().toISOString(),
-                    restoredReview: restoreReview
-                }
-            });
-
-            this.generatedPagesImages = generatedImages;
-            this.pageManager.setPages([]);
-            this.jsonInput.value = '';
-            if (this.pageNav) this.pageNav.style.display = 'none';
-            if (this.generateAllBtn) this.generateAllBtn.style.display = 'none';
-            const coverBtn = document.getElementById('generate-cover-btn');
-            if (coverBtn) coverBtn.style.display = 'none';
-            if (this.toggleViewBtn) this.toggleViewBtn.style.display = 'none';
-
-            this.loadSessionState();
-            if (this.hasSelectOption(this.imageSizeSelect, requestedImageSize)) {
-                this.imageSizeSelect.value = requestedImageSize;
-            }
-            this.updateSessionSelector();
-            this.syncComicBrainUIFromSession();
-
-            if (restoreReview) {
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        `已恢复 alpha 草稿 · ${pages.length} 页${imageLoadSummary}；继续编辑会更新 review 草稿。`,
-                        `Restored alpha draft · ${pages.length} pages${imageLoadSummary}; further edits update the review draft.`
-                    ),
-                    'success'
-                );
-            } else if (staleReview) {
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        `旧草稿已过期，已载入最新分镜 · ${pages.length} 页${imageLoadSummary}；旧 review.json 仍保留。`,
-                        `The old draft is stale. Loaded the latest ${pages.length}-page storyboard${imageLoadSummary}; review.json is preserved.`
-                    ),
-                    'error'
-                );
-            } else {
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        `已载入 ${pages.length} 页${imageLoadSummary}；编辑会保存为 review 草稿，不会改写正史。`,
-                        `Loaded ${pages.length} pages${imageLoadSummary}; edits save to a review draft and do not change canon.`
-                    ),
-                    'success'
-                );
-            }
-        } catch (error) {
-            this.setComicBrainStatus(
-                this.comicBrainText(`载入失败：${error.message}`, `Load failed: ${error.message}`),
-                'error'
-            );
-        } finally {
-            if (this.comicBrainLoadBtn) {
-                this.comicBrainLoadBtn.disabled = !this.comicBrainProjectSelect.value;
-            }
+          )
+        : [{ ...d, workPath: d.id }],
+    );
+  }
+  mergeSourceVersions(target, others) {
+    let changed = false;
+    target.images ||= {};
+    for (const [i, page] of (target.pages || []).entries()) {
+      const entry = (target.images[i] ||= { versions: [], current: 0 });
+      const selected = currentImage(entry)?.imageUrl;
+      const urls = new Set(entry.versions.map((v) => v.imageUrl));
+      for (const other of others) {
+        const matched = page.id
+          ? other.pages?.findIndex((p) => p.id === page.id)
+          : i;
+        const index = matched >= 0 ? matched : i;
+        for (const version of other.images?.[index]?.versions || []) {
+          if (!version.imageUrl || urls.has(version.imageUrl)) continue;
+          entry.versions.push({ ...version });
+          urls.add(version.imageUrl);
+          changed = true;
         }
-    }
-
-    /**
-     * Check whether a select control supports a requested value.
-     */
-    hasSelectOption(select, value) {
-        if (!select || !value) return false;
-        return Array.from(select.options).some(option => option.value === value);
-    }
-
-    /**
-     * Return the safe project locator sent to image/cover generation.
-     */
-    getComicBrainSource(session = null) {
-        const activeSession = session || (this.sessionManager && this.sessionManager.getCurrentSession());
-        const project = activeSession && activeSession.comicBrainProject;
-        if (!project) return null;
-        const metadataSource = project.metadata && project.metadata.source;
-        return {
-            series_id: project.seriesId || null,
-            chapter_id: project.chapterId || null,
-            // Keep ComicBrain requests distinct from ordinary image generation.
-            // Snapshot hashes cover the full derived package; source_hash remains
-            // available for legacy exports. Missing values stay explicit so the
-            // backend can reject stale sessions instead of dropping the checks.
-            snapshot_hash: (metadataSource && metadataSource.snapshot_hash) || null,
-            source_hash: (metadataSource && metadataSource.source_hash) || null
-        };
-    }
-
-    /**
-     * Describe the page image being generated so ComicBrain can persist its
-     * page association outside browser localStorage.
-     */
-    getComicBrainRenderMetadata(pageIndex, pageData) {
-        if (!this.getComicBrainSource() || !pageData) return null;
-        return {
-            page_index: pageIndex,
-            page_id: pageData.id || `page-${pageIndex + 1}`,
-            page_title: pageData.title || `Page ${pageIndex + 1}`,
-            page_script_fingerprint: StoryboardImageReconciler.pageFingerprint(pageData)
-        };
-    }
-
-    /**
-     * Keep the project selector aligned with the current local session.
-     */
-    syncComicBrainUIFromSession() {
-        if (!this.comicBrainProjectSelect) return;
-        const source = this.getComicBrainSource();
-
-        if (!source) {
-            if (this.comicBrainProjectSelect.options.length > 0) {
-                this.comicBrainProjectSelect.value = '';
-            }
-            if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = true;
-            if (this.comicBrainProjects.length > 0) {
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        `发现 ${this.comicBrainProjects.length} 个可载入分镜。`,
-                        `${this.comicBrainProjects.length} storyboard(s) available.`
-                    )
-                );
-            }
-            return;
-        }
-
-        const matchingIndex = this.comicBrainProjects.findIndex((project) => {
-            const seriesId = project.series_id || project.seriesId;
-            const chapterId = project.chapter_id || project.chapterId;
-            return seriesId === source.series_id && chapterId === source.chapter_id;
-        });
-        if (matchingIndex >= 0) {
-            this.comicBrainProjectSelect.value = String(matchingIndex);
-            if (this.comicBrainLoadBtn) this.comicBrainLoadBtn.disabled = false;
-        }
-
-        const session = this.sessionManager.getCurrentSession();
-        const projectName = session && session.comicBrainProject && session.comicBrainProject.title;
-        this.setComicBrainStatus(
-            this.comicBrainText(
-                `${projectName || source.chapter_id} · 本会话连接到 ComicBrain review 草稿。`,
-                `${projectName || source.chapter_id} · This session is linked to a ComicBrain review draft.`
-            ),
-            'success'
+      }
+      if (!selected && entry.versions.length) {
+        const fingerprint = StoryboardImageReconciler.pageFingerprint(page);
+        let index = entry.versions.findLastIndex(
+          (v) => v.fingerprint === fingerprint,
         );
+        entry.current = index >= 0 ? index : entry.versions.length - 1;
+        changed = true;
+      }
     }
-
-    /**
-     * Build a full review package while retaining all imported metadata.
-     */
-    buildComicBrainReview(session) {
-        const project = session && session.comicBrainProject;
-        if (!project || !session.comicData || !Array.isArray(session.comicData.pages)) return null;
-
-        const metadata = project.metadata || {};
-        return {
-            ...metadata,
-            schema_version: metadata.schema_version || 'comicbrain-alpha/1',
-            source: {
-                ...(metadata.source || {}),
-                series_id: project.seriesId,
-                chapter_id: project.chapterId
-            },
-            pages: session.comicData.pages,
-            cover: metadata.cover !== undefined ? metadata.cover : null,
-            characters: Array.isArray(metadata.characters) ? metadata.characters : [],
-            settings: {
-                ...(metadata.settings || {}),
-                comic_style: session.style,
-                language: session.language,
-                rows_per_page: session.rowsPerPage,
-                cover_custom_requirements: session.coverCustomRequirements || ''
-            }
-        };
+    for (const other of others) {
+      const urls = new Set((target.coverImages || []).map((v) => v.imageUrl));
+      for (const v of other.coverImages || [])
+        if (v.imageUrl && !urls.has(v.imageUrl)) {
+          (target.coverImages ||= []).push({ ...v });
+          urls.add(v.imageUrl);
+          changed = true;
+        }
     }
-
-    /**
-     * Debounce remote draft writes per session while localStorage stays immediate.
-     */
-    scheduleComicBrainReviewSave() {
-        const session = this.sessionManager && this.sessionManager.getCurrentSession();
-        if (!session || !this.getComicBrainSource(session)) return;
-
-        const sessionId = session.id;
-        const revision = (this.comicBrainReviewRevisions.get(sessionId) || 0) + 1;
-        this.comicBrainReviewRevisions.set(sessionId, revision);
-
-        const existingTimer = this.comicBrainReviewTimers.get(sessionId);
-        if (existingTimer) window.clearTimeout(existingTimer);
-
-        this.setComicBrainStatus(
-            this.comicBrainText(
-                '修改已保存到浏览器，正在准备 review 草稿…',
-                'Saved locally; preparing the review draft…'
-            ),
-            'saving'
+    return changed;
+  }
+  visibleDrafts() {
+    const seen = new Map();
+    const list = this.store.all().filter((d) => {
+      if (!hasContent(d)) return false;
+      const key =
+        d.source?.seriesId && d.source?.chapterId
+          ? d.source.seriesId + "/" + d.source.chapterId
+          : d.id;
+      if (seen.has(key)) {
+        const target = seen.get(key);
+        if (d.source) this.mergeSourceVersions(target, [d]);
+        return false;
+      }
+      seen.set(key, d);
+      return true;
+    });
+    return list;
+  }
+  series(id) {
+    return this.seriesList.find((s) => s.id === id);
+  }
+  draftCover(d) {
+    return (
+      d.coverImages?.at(-1)?.imageUrl || currentImage(d.images?.[0])?.imageUrl
+    );
+  }
+  seriesCover(id) {
+    return this.draftCover(
+      this.store.all().find((d) => d.seriesId === id && this.draftCover(d)) ||
+        {},
+    );
+  }
+  notify(message) {
+    const el = document.getElementById("toast");
+    el.textContent = String(message).replace(/ComicBrain/gi, "创作记忆");
+    el.classList.add("visible");
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => el.classList.remove("visible"), 5500);
+  }
+  async refresh() {
+    this.loading = true;
+    this.render();
+    try {
+      this.workspace = await ConsoleAPI.request("/console/workspace");
+      this.store.merge(this.workspace.drafts || []);
+      if (this.store.dirty.size) this.store.flushAll().catch(error => this.notify(error.message));
+      for (const result of this.workspace.production || [])
+        this.hydrateProject(result);
+      this.connected = true;
+      this.error = "";
+    } catch (error) {
+      this.connected = false;
+      this.error = error.message;
+    } finally {
+      this.loading = false;
+      this.render();
+    }
+  }
+  route() {
+    return (location.hash.slice(1) || "home").split("/").map((s) => {
+      try {
+        return decodeURIComponent(s);
+      } catch {
+        return s;
+      }
+    });
+  }
+  navigate(hash) {
+    if (location.hash === hash) this.render();
+    else location.hash = hash;
+  }
+  create(mode, sid) {
+    const d = this.store.create(mode, sid);
+    if (sid) d.style = "reference";
+    if (mode === "series" && !sid) {
+      d.seriesId = "draft-" + crypto.randomUUID();
+      d.seriesName = "";
+    }
+    this.active = d;
+    this.store.save(d);
+    this.navigate("#draft/" + d.id);
+  }
+  render() {
+    const focused = document.activeElement;
+    if (
+      this.lastRenderedHash === location.hash &&
+      this.main.contains(focused)
+    ) {
+      const attributes = [
+        "id",
+        "data-tab",
+        "data-rule",
+        "data-step",
+        "data-filter",
+        "data-output",
+        "data-version-page",
+        "data-chapter-index",
+        "data-action",
+        "data-page",
+      ];
+      const parts = attributes
+        .filter((name) => focused.hasAttribute(name))
+        .map((name) => `[${name}="${CSS.escape(focused.getAttribute(name))}"]`);
+      if (parts.length) this.restoreFocusSelector = parts.join("");
+    } else if (this.lastRenderedHash !== location.hash)
+      this.restoreFocusSelector = null;
+    if (this.renderKey) {
+      const states = new Map();
+      this.main
+        .querySelectorAll("details")
+        .forEach((el, i) =>
+          states.set(
+            i + ":" + el.querySelector("summary")?.textContent,
+            el.open,
+          ),
         );
-
-        const timer = window.setTimeout(() => {
-            this.comicBrainReviewTimers.delete(sessionId);
-            this.enqueueComicBrainReviewSave(sessionId, revision);
-        }, 800);
-        this.comicBrainReviewTimers.set(sessionId, timer);
+      this.disclosures.set(this.renderKey, states);
     }
-
-    /**
-     * Serialize review writes per session. This guarantees that an older PUT
-     * cannot finish after, and overwrite, a newer draft.
-     */
-    enqueueComicBrainReviewSave(sessionId, revision) {
-        const previousSave = this.comicBrainReviewQueues.get(sessionId) || Promise.resolve();
-        const queuedSave = previousSave
-            .catch(() => undefined)
-            .then(() => this.saveComicBrainReview(sessionId, revision));
-
-        this.comicBrainReviewQueues.set(sessionId, queuedSave);
-        const cleanup = () => {
-            if (this.comicBrainReviewQueues.get(sessionId) === queuedSave) {
-                this.comicBrainReviewQueues.delete(sessionId);
-            }
-        };
-        queuedSave.then(cleanup, cleanup);
-        return queuedSave;
+    const [route, id, chapterIndex] = this.route();
+    if (route === "single") {
+      const existing = this.store
+        .all()
+        .find((d) => d.mode === "single" && status(d) !== "已生成");
+      if (existing) {
+        this.navigate("#draft/" + existing.id);
+        return;
+      }
+      this.create("single");
+      return;
     }
-
-    /**
-     * Persist a ComicBrain review without promoting it to canonical content.
-     */
-    async saveComicBrainReview(sessionId, revision) {
-        const session = this.sessionManager.getSession(sessionId);
-        const source = this.getComicBrainSource(session);
-        const review = this.buildComicBrainReview(session);
-        if (!session || !source || !review) return;
-
-        if (this.sessionManager.getCurrentSession()?.id === sessionId) {
-            this.setComicBrainStatus(
-                this.comicBrainText('正在保存 review 草稿…', 'Saving review draft…'),
-                'saving'
-            );
-        }
-
-        try {
-            await ComicAPI.saveComicBrainReview(source.series_id, source.chapter_id, review);
-            if (
-                this.comicBrainReviewRevisions.get(sessionId) === revision
-                && this.sessionManager.getCurrentSession()?.id === sessionId
-            ) {
-                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        `review 草稿已保存 ${time} · 未改写正史`,
-                        `Review draft saved ${time} · canon unchanged`
-                    ),
-                    'success'
-                );
-            }
-        } catch (error) {
-            if (
-                this.comicBrainReviewRevisions.get(sessionId) === revision
-                && this.sessionManager.getCurrentSession()?.id === sessionId
-            ) {
-                this.setComicBrainStatus(
-                    this.comicBrainText(
-                        `浏览器内已保存；review 写入失败：${error.message}`,
-                        `Saved locally; review write failed: ${error.message}`
-                    ),
-                    'error'
-                );
-            }
-        }
+    if (route === "new-series") {
+      this.create("series");
+      return;
     }
-
-    /**
-     * Use ComicBrain cover intent as an initial requirement without replacing
-     * anything the user already typed.
-     */
-    buildComicBrainCoverRequirements() {
-        const session = this.sessionManager && this.sessionManager.getCurrentSession();
-        const cover = session && session.comicBrainProject
-            && session.comicBrainProject.metadata
-            && session.comicBrainProject.metadata.cover;
-        if (!cover) return '';
-        if (typeof cover === 'string') return cover.trim();
-
-        const labels = {
-            title: this.comicBrainText('标题', 'Title'),
-            brief: this.comicBrainText('封面构想', 'Cover brief'),
-            context: this.comicBrainText('剧情语境', 'Story context'),
-            prompt: this.comicBrainText('画面要求', 'Visual direction'),
-            description: this.comicBrainText('说明', 'Description')
-        };
-        return Object.keys(labels)
-            .filter(key => typeof cover[key] === 'string' && cover[key].trim())
-            .map(key => `${labels[key]}：${cover[key].trim()}`)
-            .join('\n');
-    }
-
-    /**
-     * Save current session state
-     */
-    saveCurrentSessionState() {
-        if (!this.sessionManager) return;
-
-        const comicData = this.pageManager.getPageCount() > 0 ? {
-            pages: this.pageManager.pages,
-            pageCount: this.pageManager.getPageCount()
-        } : null;
-
-        this.sessionManager.updateCurrentSession({
-            comicData: comicData,
-            generatedImages: this.generatedPagesImages,
-            currentPageIndex: this.pageManager.getCurrentPageIndex(),
-            style: this.comicStyleSelect ? this.comicStyleSelect.value : 'doraemon',
-            language: this.comicLanguageSelect ? this.comicLanguageSelect.value : 'en',
-            pageCount: this.pageCountInput ? parseInt(this.pageCountInput.value) : 3,
-            rowsPerPage: this.rowsPerPageSelect ? parseInt(this.rowsPerPageSelect.value) : 4,
-            prompt: this.promptInput ? this.promptInput.value : '',
-            referenceImage: this.getPersistableReferenceImage(),
-            coverCustomRequirements: this.coverCustomInput ? this.coverCustomInput.value : ''
-        });
-    }
-
-    /**
-     * Load session state
-     */
-    loadSessionState() {
-        if (!this.sessionManager) return;
-
-        const session = this.sessionManager.getCurrentSession();
-        if (!session) return;
-
-        this.isLoadingSession = true;
-        try {
-            console.log('loadSessionState for session:', session.id, {
-                hasComicData: !!session.comicData,
-                hasImages: !!(session.generatedImages && Object.keys(session.generatedImages).length > 0),
-                imagesCount: session.generatedImages ? Object.keys(session.generatedImages).length : 0
-            });
-
-            this.generatedPagesImages = session.generatedImages || {};
-            this.updateBatchGenerationButtons();
-
-            // Restore style and language
-            if (this.comicStyleSelect) {
-                this.comicStyleSelect.value = session.style || 'doraemon';
-            }
-
-            if (this.comicLanguageSelect) {
-                this.comicLanguageSelect.value = session.language || 'en';
-            }
-
-            // Restore prompt and page count
-            if (this.promptInput) {
-                this.promptInput.value = session.prompt || '';
-                this.updateGenerateButtonState(); // Update button state based on new prompt
-            }
-
-            if (this.pageCountInput) {
-                this.pageCountInput.value = session.pageCount || 3;
-            }
-
-            if (this.rowsPerPageSelect) {
-                this.rowsPerPageSelect.value = session.rowsPerPage || 4;
-            }
-
-            if (this.coverCustomInput) {
-                this.coverCustomInput.value = session.coverCustomRequirements || '';
-            }
-
-            // Restore reference image
-            if (session.referenceImage) {
-                this.referenceImage = session.referenceImage;
-            } else {
-                this.referenceImage = null;
-            }
-            this.referenceImageIsEphemeral = this.isReferenceImageTooLargeForStorage();
-            this.referenceImageEphemeralNoticeShown = false;
-            this.updateReferenceImageUI();
-
-            // Restore comic data
-            if (session.comicData && session.comicData.pages) {
-                this.pageManager.setPages(session.comicData.pages);
-                this.pageManager.setCurrentPageIndex(session.currentPageIndex || 0);
-
-                // Update JSON input
-                const currentPage = this.pageManager.getCurrentPage();
-                if (currentPage) {
-                    this.jsonInput.value = JSON.stringify(currentPage, null, 2);
-                }
-
-                // Render the page without overwriting saved generated images
-                this.renderComic();
-
-                // Show navigation if multiple pages
-                if (session.comicData.pageCount > 1) {
-                    this.pageNav.style.display = 'flex';
-                    this.updateBatchGenerationButtons();
-                }
-
-                // Show render button
-                if (this.renderCurrentBtn) {
-                    this.renderCurrentBtn.style.display = 'inline-flex';
-                }
-            }
-
-            // Show cover button if we have generated images
-            if (Object.keys(this.generatedPagesImages).length > 0) {
-                const coverBtn = document.getElementById('generate-cover-btn');
-                if (coverBtn) {
-                    coverBtn.style.display = 'inline-flex';
-                }
-            }
-
-            // Load current page (will show generated image if available)
-            if (this.pageManager.getPageCount() > 0) {
-                this.loadCurrentPage();
-            }
-            this.updateBatchGenerationButtons();
-        } finally {
-            this.isLoadingSession = false;
-            this.syncComicBrainUIFromSession();
-        }
-    }
-
-    /**
-     * Switch to a different session
-     * @param {string} sessionId - Session ID to switch to
-     */
-    switchToSession(sessionId) {
-        if (!this.sessionManager) return;
-
-        // Save current session state before switching
-        this.saveCurrentSessionState();
-
-        // Switch session
-        const session = this.sessionManager.switchSession(sessionId);
-        if (!session) return;
-
-        // Clear and reset current state
-        this.generatedPagesImages = {};
-        this.pageManager.setPages([]);
-        this.jsonInput.value = '';
-
-        // Reset UI elements to clean state
-        const comicPage = document.getElementById('comic-page');
-        if (comicPage) {
-            comicPage.style.display = 'none';
-            comicPage.innerHTML = ''; // Clear actual content
-        }
-
-        const editHint = document.querySelector('.edit-hint');
-        if (editHint) editHint.style.display = 'none';
-
-        // Show empty state temporarily (will be hidden if session has content)
-        const emptyState = document.getElementById('empty-state');
-        if (emptyState) emptyState.style.display = 'flex';
-
-        const previewContainer = document.querySelector('.preview-container');
-        if (previewContainer) previewContainer.classList.remove('has-content');
-
-        if (this.pageNav) this.pageNav.style.display = 'none';
-        if (this.generateAllBtn) this.generateAllBtn.style.display = 'none';
-        if (this.renderCurrentBtn) this.renderCurrentBtn.style.display = 'none';
-
-        const coverBtn = document.getElementById('generate-cover-btn');
-        if (coverBtn) coverBtn.style.display = 'none';
-
-        if (this.toggleViewBtn) this.toggleViewBtn.style.display = 'none';
-
-        // Load new session state
-        this.loadSessionState();
-
-        // Update UI
-        this.updateSessionSelector();
-    }
-
-    /**
-     * Create a new session
-     */
-    createNewSession() {
-        if (!this.sessionManager) return;
-
-        // Save current session state
-        this.saveCurrentSessionState();
-
-        // Get current session's configuration to carry over
-        const currentSession = this.sessionManager.getCurrentSession();
-        const config = currentSession ? {
-            style: currentSession.style,
-            language: currentSession.language,
-            pageCount: currentSession.pageCount,
-            rowsPerPage: currentSession.rowsPerPage
-        } : {};
-
-        // Create new session with current configuration
-        const sessionCount = this.sessionManager.getAllSessions().length + 1;
-        const defaultName = 'session ' + sessionCount;
-        const session = this.sessionManager.createSession(defaultName, config);
-
-        // Switch to new session
-        this.sessionManager.switchSession(session.id);
-
-        // Clear current state
-        this.generatedPagesImages = {};
-        this.pageManager.setPages([]);
-        this.jsonInput.value = '';
-
-        // Hide UI elements and show empty state
-        const comicPage = document.getElementById('comic-page');
-        if (comicPage) comicPage.style.display = 'none';
-
-        const editHint = document.querySelector('.edit-hint');
-        if (editHint) editHint.style.display = 'none';
-
-        const emptyState = document.getElementById('empty-state');
-        if (emptyState) emptyState.style.display = 'flex';
-
-        const previewContainer = document.querySelector('.preview-container');
-        if (previewContainer) previewContainer.classList.remove('has-content');
-
-        this.pageNav.style.display = 'none';
-        if (this.generateAllBtn) this.generateAllBtn.style.display = 'none';
-        if (this.renderCurrentBtn) this.renderCurrentBtn.style.display = 'none';
-
-        const coverBtn = document.getElementById('generate-cover-btn');
-        if (coverBtn) coverBtn.style.display = 'none';
-
-        if (this.toggleViewBtn) this.toggleViewBtn.style.display = 'none';
-
-        // Update UI
-        this.updateSessionSelector();
-
-        // Load default state for new session (language, style)
-        this.loadSessionState();
-    }
-
-    /**
-     * Update session selector dropdown
-     */
-    updateSessionSelector() {
-        if (!this.sessionManager) return;
-
-        const selector = document.getElementById('session-selector');
-        if (!selector) return;
-
-        const sessions = this.sessionManager.getAllSessions();
-        const currentSessionId = this.sessionManager.getCurrentSession()?.id;
-
-        selector.innerHTML = '';
-        sessions.forEach(session => {
-            const option = document.createElement('option');
-            option.value = session.id;
-            option.textContent = session.name;
-            if (session.id === currentSessionId) {
-                option.selected = true;
-            }
-            selector.appendChild(option);
-        });
-    }
-
-    /**
-     * Toggle session management modal
-     */
-    toggleSessionManager() {
-        const modal = document.getElementById('session-modal');
-        if (!modal) return;
-
-        if (modal.style.display === 'none' || !modal.style.display) {
-            // Show modal and populate session list
-            this.updateSessionList();
-            modal.style.display = 'flex';
-        } else {
-            modal.style.display = 'none';
-        }
-    }
-
-    /**
-     * Update session list in modal
-     */
-    updateSessionList() {
-        if (!this.sessionManager) return;
-
-        const listContainer = document.getElementById('session-list');
-        if (!listContainer) return;
-
-        const sessions = this.sessionManager.getAllSessions();
-        const currentSessionId = this.sessionManager.getCurrentSession()?.id;
-
-        listContainer.innerHTML = '';
-
-        sessions.forEach(session => {
-            const item = document.createElement('div');
-            item.className = 'session-item' + (session.id === currentSessionId ? ' active' : '');
-
-            const info = document.createElement('div');
-            info.className = 'session-info';
-
-            const name = document.createElement('div');
-            name.className = 'session-name';
-            name.textContent = session.name;
-
-            const meta = document.createElement('div');
-            meta.className = 'session-meta';
-            const date = new Date(session.updatedAt);
-            meta.textContent = date.toLocaleString();
-
-            info.appendChild(name);
-            info.appendChild(meta);
-
-            const actions = document.createElement('div');
-            actions.className = 'session-actions';
-
-            // Rename button
-            const renameBtn = document.createElement('button');
-            renameBtn.className = 'session-action-btn';
-            renameBtn.innerHTML = '✏️';
-            renameBtn.title = window.i18n ? window.i18n.t('renameSession') : 'Rename';
-            renameBtn.onclick = () => this.renameSession(session.id);
-
-            // Delete button
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'session-action-btn delete';
-            deleteBtn.innerHTML = '🗑️';
-            deleteBtn.title = window.i18n ? window.i18n.t('deleteSession') : 'Delete';
-            deleteBtn.onclick = () => this.deleteSession(session.id);
-
-            // Switch button (if not current)
-            if (session.id !== currentSessionId) {
-                const switchBtn = document.createElement('button');
-                switchBtn.className = 'session-action-btn primary';
-                switchBtn.textContent = window.i18n ? window.i18n.t('switchSession') : 'Switch';
-                switchBtn.onclick = () => {
-                    this.switchToSession(session.id);
-                    this.toggleSessionManager();
-                };
-                actions.appendChild(switchBtn);
-            }
-
-            actions.appendChild(renameBtn);
-            actions.appendChild(deleteBtn);
-
-            item.appendChild(info);
-            item.appendChild(actions);
-            listContainer.appendChild(item);
-        });
-    }
-
-    /**
-     * Rename a session
-     * @param {string} sessionId - Session ID to rename
-     */
-    renameSession(sessionId) {
-        if (!this.sessionManager) return;
-
-        const session = this.sessionManager.getSession(sessionId);
-        if (!session) return;
-
-        const newName = prompt(
-            window.i18n ? window.i18n.t('sessionName') : 'Session Name',
-            session.name
+    if (route === "editor") {
+      if (this.loading) {
+        this.main.innerHTML = empty("正在载入系列…", "稍等片刻");
+        return;
+      }
+      const existing = this.store
+        .all()
+        .find(
+          (d) =>
+            d.seriesId === id &&
+            !d.source &&
+            !d.canonDecision &&
+            unfinishedDraft(d),
         );
-
-        if (newName && newName.trim()) {
-            this.sessionManager.renameSession(sessionId, newName.trim());
-            this.updateSessionList();
-            this.updateSessionSelector();
-        }
+      if (existing) {
+        this.navigate("#draft/" + existing.id);
+        return;
+      }
+      if (["deprecated", "archived"].includes(this.series(id)?.status)) {
+        this.navigate("#series/" + id);
+        return;
+      }
+      if (!this.series(id)) {
+        this.main.innerHTML = empty(
+          "系列尚未载入",
+          "请回到系列列表，连接工作空间后重试。",
+          link("我的系列", "#series"),
+        );
+        return;
+      }
+      this.create("series", id);
+      return;
     }
-
-    /**
-     * Delete a session
-     * @param {string} sessionId - Session ID to delete
-     */
-    deleteSession(sessionId) {
-        if (!this.sessionManager) return;
-
-        const confirmMsg = window.i18n ? window.i18n.t('confirmDeleteSession') : 'Are you sure you want to delete this session?';
-        if (!confirm(confirmMsg)) return;
-
-        const success = this.sessionManager.deleteSession(sessionId);
-        if (success) {
-            this.updateSessionList();
-            this.updateSessionSelector();
-
-            // If we deleted the current session, load the new current session
-            this.loadSessionState();
-        }
+    const nav = ["draft", "editor", "new-series"].includes(route)
+      ? this.store.drafts[id]?.mode === "single"
+        ? "single"
+        : "series"
+      : route === "work"
+        ? "library"
+        : route;
+    document.querySelectorAll("[data-nav]").forEach((el) => {
+      const active = el.dataset.nav === nav;
+      el.classList.toggle("active", active);
+      if (active) el.setAttribute("aria-current", "page");
+      else el.removeAttribute("aria-current");
+    });
+    const labels = {
+      home: "创作工作台",
+      series: id ? this.series(id)?.name : "我的系列",
+      library: "漫画作品",
+      principles: "创作原则",
+      draft: "创作编辑",
+      work: "阅读漫画",
+      settings: "创作设置",
+      workspace: "创作空间",
+    };
+    document.getElementById("breadcrumb").innerHTML =
+      `我的空间 <span>/</span> ${E(labels[route] || "创作工作台")}`;
+    let html = "";
+    if (route === "home") html = this.views.home();
+    else if (route === "series")
+      html = id
+        ? this.series(id)
+          ? this.views.seriesDetail(this.series(id))
+          : empty(
+              "系列尚未载入",
+              "重新同步后查看系列。",
+              button("重新同步", "refresh"),
+            )
+        : this.views.seriesList();
+    else if (route === "principles") html = this.views.principles();
+    else if (route === "library") html = this.views.library();
+    else if (route === "settings") html = this.views.settings();
+    else if (route === "workspace") html = this.workspaceUI?.view() || empty("正在读取创作空间…", "稍等片刻");
+    else if (route === "draft" || route === "work") {
+      this.active = this.store.drafts[id];
+      if (!this.active)
+        html = empty(
+          "没有找到这份作品",
+          "连接工作空间后重试，或返回工作台。",
+          link("返回工作台", "#home"),
+        );
+      else {
+        if (
+          route === "work" &&
+          chapterIndex !== undefined &&
+          Number(chapterIndex) !== this.active.chapterIndex &&
+          this.active.chapters?.[Number(chapterIndex)]
+        )
+          this.switchChapter(Number(chapterIndex));
+        html =
+          route === "work"
+            ? `${heading(this.active.title || "漫画作品", this.series(this.active.seriesId)?.name || "单篇漫画", link(this.active.mode === "series" ? "返回系列" : "返回作品库", this.active.mode === "series" ? "#series/" + this.active.seriesId : "#library"))}${this.views.output(this.active, true)}`
+            : this.views.editor(this.active);
+      }
+    } else html = this.views.home();
+    if (this.loading)
+      html =
+        `<div class="connection-status" role="status">正在同步创作记忆…</div>` +
+        html;
+    else if (this.error)
+      html =
+        `<div class="connection-status error" role="alert"><span>${E(this.error.replace(/ComicBrain/gi, "创作记忆"))} · 本机草稿仍可查看</span>${button("重新连接", "refresh")}</div>` +
+        html;
+    if (this.jobError && this.jobError.hash === location.hash)
+      html =
+        `<div class="connection-status error" role="alert"><div><strong>操作未完成</strong><p>${E(this.jobError.message.replace(/ComicBrain/gi, "创作记忆"))}</p><p>已完成内容已保留，可修正后重试。</p></div><div class="inline-actions">${button("重试", "retry-job")}${link("检查创作设置", "#settings")}${button("关闭提示", "dismiss-error")}</div></div>` +
+        html;
+    if (this.busy)
+      html =
+        `<div class="job-status" role="status"><span class="spinner" aria-hidden="true"></span><div><span>${E(this.progress || "正在生成，请稍候…")}</span><p class="hint" id="job-elapsed">生成可能需要几分钟 · 已完成内容会自动保留</p></div>${button("完成当前页后暂停", "pause", false, this.canPause ? "" : "hidden")}</div>` +
+        html;
+    this.main.innerHTML = html;
+    this.renderKey =
+      location.hash +
+      ":" +
+      (this.active?.step ?? "") +
+      ":" +
+      (this.active?.chapterIndex ?? "") +
+      ":" +
+      this.output;
+    const disclosure = this.disclosures.get(this.renderKey);
+    if (disclosure)
+      this.main.querySelectorAll("details").forEach((el, i) => {
+        const key = i + ":" + el.querySelector("summary")?.textContent;
+        if (disclosure.has(key)) el.open = disclosure.get(key);
+      });
+    if (this.busy)
+      this.main
+        .querySelectorAll(
+          'input,textarea,select,button:not([data-action="pause"])',
+        )
+        .forEach((el) => (el.disabled = true));
+    this.main.setAttribute("aria-busy", String(this.busy));
+    this.lastRenderedHash = location.hash;
+    const restore =
+      this.restoreFocusSelector &&
+      this.main.querySelector(this.restoreFocusSelector);
+    if (restore && !restore.disabled) restore.focus({ preventScroll: true });
+    this.commands?.reportState();
+    this.assistant?.syncContext();
+  }
+  bind() {
+    window.addEventListener("storage", (e) => {
+      if (e.key !== this.store.key || this.busy || !e.newValue) return;
+      try {
+        this.store.merge(Object.values(JSON.parse(e.newValue)), false);
+        if (
+          !this.main.contains(document.activeElement) ||
+          !document.activeElement.matches("input,textarea,select")
+        )
+          this.render();
+      } catch {}
+    });
+    document.querySelector(".skip-link").addEventListener("click", (e) => {
+      e.preventDefault();
+      this.main.focus();
+      this.main.scrollIntoView({ block: "start" });
+    });
+    window.addEventListener("hashchange", () => {
+      this.render();
+      this.main.focus({ preventScroll: true });
+      window.scrollTo(0, 0);
+    });
+    window.addEventListener("console-save-error", (e) => {
+      const el = document.getElementById("save-state");
+      if (el) el.textContent = e.detail;
+      this.notify(e.detail);
+    });
+    window.addEventListener("console-saved", (e) => {
+      if (this.active?.id === e.detail) {
+        const el = document.getElementById("save-state");
+        if (el) el.textContent = "已保存到本机与工作空间";
+      }
+    });
+    this.main.addEventListener("keydown", (e) => {
+      const tab = e.target.closest('[role="tab"]');
+      if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key))
+        return;
+      const tabs = [
+        ...tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]'),
+      ];
+      let index = tabs.indexOf(tab);
+      index =
+        e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? tabs.length - 1
+            : (index + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+              tabs.length;
+      e.preventDefault();
+      tabs[index].focus();
+      tabs[index].click();
+    });
+    this.main.addEventListener("input", (e) => this.input(e));
+    this.main.addEventListener("change", (e) => this.change(e));
+    this.main.addEventListener("click", (e) => this.click(e));
+    this.main.addEventListener("keydown", (e) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key === "Enter" &&
+        e.target.id === "field-idea" &&
+        this.active &&
+        !this.busy
+      ) {
+        e.preventDefault();
+        this.job(() => this.plan(this.active));
+      }
+    });
+    this.main.addEventListener("paste", (e) => {
+      const image = [...(e.clipboardData?.files || [])].find((f) =>
+        f.type.startsWith("image/"),
+      );
+      if (image && this.active) {
+        e.preventDefault();
+        this.reference(image);
+      }
+    });
+    this.main.addEventListener("dragover", (e) => {
+      if (e.target.closest("#reference-drop")) e.preventDefault();
+    });
+    this.main.addEventListener("drop", (e) => {
+      if (e.target.closest("#reference-drop")) {
+        e.preventDefault();
+        const f = e.dataTransfer.files[0];
+        if (f) this.reference(f);
+      }
+    });
+    document
+      .getElementById("design-notes")
+      .addEventListener("click", () =>
+        document.getElementById("notes-dialog").showModal(),
+      );
+    document
+      .getElementById("close-notes")
+      .addEventListener("click", () =>
+        document.getElementById("notes-dialog").close(),
+      );
+    document.addEventListener("click", (e) => {
+      if (e.target.matches("[data-close-preview]"))
+        document.getElementById("image-dialog")?.close();
+    });
+    window.addEventListener("pagehide", () => this.store.local());
+  }
+  changed(d, story = false) {
+    if (story) {
+      d.storyDirty = true;
+      d.canonDecision = null;
     }
+    this.snapshotChapter(d);
+    this.store.save(d);
+    const el = document.getElementById("save-state");
+    if (el) el.textContent = "本机已保留 · 正在同步工作空间";
+    this.commands?.reportState();
+  }
+  input(e) {
+    const characterInput = e.target;
+    if (characterInput.dataset.characterName) {
+      const config = this.editCharacters(characterInput.dataset.series);
+      config.characters.find(c => c.id === characterInput.dataset.characterName).name = characterInput.value;
+      return;
+    }
+    const el = e.target;
+    if (el.id === "series-search") {
+      this.search = el.value;
+      document.getElementById("series-results").innerHTML =
+        this.views.filteredSeries();
+      return;
+    }
+    if (el.hasAttribute("data-config")) {
+      const c = ConfigManager.loadConfig();
+      c[el.dataset.field] = el.type === "checkbox" ? el.checked : el.value;
+      const ok = ConfigManager.saveConfig(c);
+      const s = document.getElementById("settings-state");
+      if (s)
+        s.textContent = ok
+          ? "设置已自动保存"
+          : "设置保存失败，请检查浏览器存储";
+      return;
+    }
+    if (el.hasAttribute("data-key")) {
+      const ok =
+        el.dataset.field === "apiKey"
+          ? ConfigManager.saveApiKey(el.value)
+          : ConfigManager.saveGoogleApiKey(el.value);
+      const s = document.getElementById("settings-state");
+      if (s) s.textContent = ok ? "凭据已保存在本机" : "凭据保存失败";
+      return;
+    }
+    const d = this.active;
+    if (!d) return;
+    if (el.hasAttribute("data-retrospective")) {
+      const key = String(d.chapterIndex || 0);
+      d.retrospectives ||= {};
+      d.retrospectives[key] ||= {};
+      d.retrospectives[key].content = el.value;
+      d.retrospectives[key].basedOn = null;
+      d.retrospectives[key].manual = true;
+      this.changed(d);
+      return;
+    }
+    if (el.dataset.field) {
+      const name = el.dataset.field;
+      d[name] = ["pageCount", "chapterCount", "rows"].includes(name)
+        ? Number(el.value)
+        : el.value;
+      if (name === "title" && d.chapters[d.chapterIndex])
+        d.chapters[d.chapterIndex].title = el.value;
+      if (name === "summary" && d.chapters[d.chapterIndex])
+        d.chapters[d.chapterIndex].summary = el.value;
+      if (
+        ["coverTitle", "coverBrief"].includes(name) &&
+        d.chapters[d.chapterIndex]
+      )
+        d.chapters[d.chapterIndex].cover = {
+          title: d.coverTitle,
+          description: d.coverBrief,
+        };
+      this.changed(d, ["summary", "title"].includes(name) && isPlanned(d));
+      if (
+        d.source &&
+        ["title", "coverTitle", "coverBrief", "style", "language"].includes(
+          name,
+        )
+      )
+        this.saveReview(d);
+      if (["style", "language"].includes(name)) {
+        for (const images of [
+          d.images,
+          ...(d.chapters || []).map((ch) => ch.images),
+        ])
+          for (const entry of Object.values(images || {}))
+            for (const v of entry.versions || []) v.fingerprint = null;
+        this.changed(d);
+      }
+    }
+    if (el.dataset.beat !== undefined) {
+      d.chapters[d.chapterIndex].beats[Number(el.dataset.beat)] = el.value;
+      this.changed(d, true);
+    }
+    if (el.dataset.panel) {
+      const [p, r, n] = el.dataset.panel.split(",").map(Number);
+      d.pages[p].rows[r].panels[n].text = el.value;
+      const article = el.closest(".comic-sheet");
+      const preview = article
+        ?.querySelectorAll(".sketch-row")
+        [r]?.querySelectorAll(".sketch-panel span")[n];
+      if (preview) preview.textContent = el.value;
+      d.canonDecision = null;
+      this.changed(d);
+      this.saveReview(d);
+    }
+  }
+  async change(e) {
+    const el = e.target;
+    if (el.hasAttribute("data-config")) {
+      const c = ConfigManager.loadConfig();
+      if (el.dataset.field === "modelProvider") {
+        c.modelProvider = el.value;
+        c.model =
+          el.value === "codex"
+            ? "gpt-6.1-sol"
+            : el.value === "google"
+              ? "gemini-3-flash-preview"
+              : "gpt-4o-mini";
+        c.imageProvider = el.value;
+        c.imageModel =
+          el.value === "google"
+            ? "gemini-3.1-flash-image-preview"
+            : "gpt-image-2";
+        c.customModel = "";
+        c.customImageModel = "";
+      }
+      ConfigManager.saveConfig(c);
+      this.render();
+      return;
+    }
+    if (el.id === "library-series") {
+      this.librarySeries = el.value;
+      this.render();
+    }
+    if (el.dataset.versionPage !== undefined) {
+      this.active.images[Number(el.dataset.versionPage)].current = Number(
+        el.value,
+      );
+      this.changed(this.active);
+      this.render();
+    }
+    if (el.dataset.characterUpload && el.files?.length) {
+      const sid = el.dataset.series;
+      const config = this.editCharacters(sid);
+      const character = config.characters.find(c => c.id === el.dataset.characterUpload);
+      try {
+        if (character.references.length + el.files.length > 8) throw new Error("每位人物最多添加 8 张参考图");
+        const images = [];
+        for (const file of el.files) {
+          if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 10 * 1024 * 1024) throw new Error("请上传 10 MB 以内的 PNG、JPG 或 WebP 图片");
+          images.push(await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error("图片读取失败，请重新选择"));
+            reader.readAsDataURL(file);
+          }));
+        }
+        character.references.push(...images);
+        this.render();
+        this.notify("参考图已添加，点击保存人物设定后生效。");
+      } catch (error) { this.notify(error.message); }
+      return;
+    }
+    if (el.id === "reference-upload" && el.files[0])
+      this.reference(el.files[0]);
+    if (el.dataset.field && !el.hasAttribute("data-config")) this.input(e);
+  }
+  editCharacters(sid) {
+    return this.characterEdits[sid] ||= structuredClone(this.series(sid)?.characterSettings || { revision: 1, characters: [] });
+  }
+  async characterAction(action, el) {
+    const sid = el.dataset.series;
+    const config = this.editCharacters(sid);
+    if (action === "add-character") config.characters.push({id: "character-" + crypto.randomUUID(), name: "", references: []});
+    if (action === "remove-character") config.characters = config.characters.filter(c => c.id !== el.dataset.character);
+    if (action === "remove-character-reference") config.characters.find(c => c.id === el.dataset.character)?.references.splice(Number(el.dataset.reference), 1);
+    if (action === "save-characters" || action === "reload-characters") {
+      try {
+        const value = await ConsoleAPI.request(`/console/series/${encodeURIComponent(sid)}/characters`, action === "save-characters" ? "PUT" : "GET", action === "save-characters" ? config : undefined);
+        this.characterEdits[sid] = value;
+        const series = this.series(sid);
+        if (series) series.characterSettings = value;
+        this.notify(action === "save-characters" ? "人物设定已保存，下次出图会使用这些参考图。" : "已载入保存的人物设定。");
+      } catch (error) { this.notify(error.message); }
+    }
+    this.render();
+  }
+  async click(e) {
+    const anchor = e.target.closest("a");
+    if (
+      ["#principles", "#settings"].includes(anchor?.getAttribute("href")) &&
+      ["draft", "work", "series"].includes(this.route()[0])
+    )
+      this.returnHash = location.hash;
+    const el = e.target.closest("button");
+    if (!el) return;
+    if (el.dataset.action === "pause") {
+      this.pause = true;
+      this.notify("当前页完成后暂停，已生成图片会保留。");
+      return;
+    }
+    if (this.busy) return;
+    if (el.dataset.tab) {
+      this.tab = el.dataset.tab;
+      if (this.tab === "characters") {
+        const sid = this.route()[1];
+        if (!this.characterEdits[sid] && !this.series(sid)?.characterSettings) {
+          try { this.characterEdits[sid] = await ConsoleAPI.request(`/console/series/${encodeURIComponent(sid)}/characters`); }
+          catch (error) { this.notify(error.message); }
+        }
+      }
+      this.render();
+    }
+    if (el.dataset.rule !== undefined) {
+      this.rule = Number(el.dataset.rule);
+      this.render();
+    }
+    if (el.dataset.filter) {
+      this.filter = el.dataset.filter;
+      this.librarySeries = "";
+      this.render();
+    }
+    if (el.dataset.output) {
+      this.output = el.dataset.output;
+      this.render();
+    }
+    if (el.dataset.step !== undefined) {
+      this.active.step = Number(el.dataset.step);
+      if (isPlanned(this.active) && this.active.step === 3)
+        this.output = "sketch";
+      this.changed(this.active);
+      this.render();
+      this.main
+        .querySelector(".editor-paper h2")
+        ?.scrollIntoView({ block: "start" });
+    }
+    if (el.dataset.chapterIndex !== undefined) {
+      if (this.route()[0] === "work")
+        this.navigate(
+          "#work/" + this.active.id + "/" + el.dataset.chapterIndex,
+        );
+      else {
+        this.switchChapter(Number(el.dataset.chapterIndex));
+        this.render();
+      }
+    }
+    if (el.dataset.preview !== undefined)
+      this.preview(Number(el.dataset.preview));
+    const d = this.active,
+      action = el.dataset.action;
+    if (!action) return;
+    if (["add-character", "remove-character", "remove-character-reference", "save-characters", "reload-characters"].includes(action)) {
+      await this.characterAction(action, el);
+      return;
+    }
+    if (action === "refresh") {
+      await this.refresh();
+      return;
+    }
+    if (action === "new-series-draft" || action === "new-single") {
+      this.create(
+        action === "new-single" ? "single" : "series",
+        el.dataset.series,
+      );
+      return;
+    }
+    if (action === "dismiss-error") {
+      this.jobError = null;
+      this.render();
+      return;
+    }
+    if (action === "retry-job") {
+      const retry = this.retryJob;
+      await this.job(retry);
+      return;
+    }
+    if (action === "back-context") {
+      d.step = 0;
+      this.changed(d);
+      this.render();
+      return;
+    }
+    if (action === "view-output") {
+      d.step = outputStep(d);
+      this.output = "comic";
+      this.changed(d);
+      this.render();
+      return;
+    }
+    if (action === "next") {
+      if (
+        d.seriesName !== undefined &&
+        d.seriesId?.startsWith("draft-") &&
+        !d.seriesName.trim()
+      ) {
+        this.notify("先给新系列一个名字。");
+        return;
+      }
+      if (d.seriesId?.startsWith("draft-") && !d.seriesBrief?.trim()) {
+        this.notify("请描述系列方向与人物设想，让下一步剧情有所依据。");
+        document.getElementById("field-seriesBrief")?.focus();
+        return;
+      }
+      d.step = 1;
+      this.changed(d);
+      this.render();
+      return;
+    }
+    if (["edit-again", "edit-pages", "edit-page"].includes(action)) {
+      d.step = action === "edit-again" && isPlanned(d) ? 2 : reviewStep(d);
+      this.editPage = Number(el.dataset.page || 0);
+      if (isPlanned(d) && d.step === 3) this.output = "sketch";
+      this.changed(d);
+      this.navigate("#draft/" + d.id);
+      if (action === "edit-page")
+        requestAnimationFrame(() => {
+          const field = this.main.querySelector(
+            `[data-panel^="${this.editPage},"]`,
+          );
+          if (field) {
+            const details = field.closest("details");
+            if (details) details.open = true;
+            field.focus();
+            field.scrollIntoView({ block: "center" });
+          }
+        });
+      return;
+    }
+    if (action === "remove-reference") {
+      d.reference = null;
+      this.changed(d);
+      this.render();
+      return;
+    }
+    if (action === "export-draft") {
+      this.downloadBlob(
+        new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }),
+        (d.title || "漫画草稿") + ".json",
+      );
+      return;
+    }
+    if (action === "copy-social") {
+      try {
+        await navigator.clipboard.writeText(
+          [
+            d.social.title,
+            d.social.content,
+            (d.social.tags || []).join(" "),
+          ].join("\n\n"),
+        );
+        this.notify("文案已复制");
+      } catch {
+        this.notify("复制未完成，请直接选择文案复制");
+      }
+      return;
+    }
+    this.scrollAfterJob = ["plan", "storyboard", "revise", "generate"].includes(
+      action,
+    );
+    await this.job(async () => {
+      if (action === "storyboard") {
+        await this.storyboard(d);
+        d.step = reviewStep(d);
+        this.output = "sketch";
+        this.changed(d);
+      } else if (action === "plan") await this.plan(d);
+      else if (action === "revise") {
+        if (!d.revisionText?.trim()) throw new Error("先填写希望调整的方向。");
+        if (isPlanned(d) && d.step === 2) await this.plan(d, true);
+        else await this.reviseStoryboard(d);
+      } else if (action === "generate") await this.generate(d);
+      else if (action === "redraw")
+        await this.generate(d, Number(el.dataset.page));
+      else if (action === "import")
+        await this.importProject(el.dataset.series, el.dataset.chapter);
+      else if (action === "download-page")
+        await this.downloadImage(
+          currentImage(d.images[Number(el.dataset.page)]).imageUrl,
+          `${d.title}-${Number(el.dataset.page) + 1}.png`,
+        );
+      else if (action === "export-work") await this.exportWork(d);
+      else if (action === "cover") await this.cover(d);
+      else if (action === "social") await this.social(d, el.dataset.platform);
+      else if (action === "optimize") await this.optimize(d);
+      else if (action === "canon") await this.saveToSeries(d);
+      else if (action === "retrospective") await this.generateRetrospective(d);
+      else if (action === "save-retrospective") await this.saveRetrospective(d);
+    });
+  }
+  async job(work) {
+    if (this.busy) return;
+    const initialStep = this.active?.step;
+    this.busy = true;
+    this.jobStartedAt = Date.now();
+    this.elapsedTimer = setInterval(() => {
+      const el = document.getElementById("job-elapsed");
+      if (el)
+        el.textContent =
+          "已等待 " +
+          Math.floor((Date.now() - this.jobStartedAt) / 1000) +
+          " 秒 · 生成期间请保持页面打开";
+    }, 1000);
+    this.retryJob = work;
+    this.jobError = null;
+    this.progress = "正在准备…";
+    this.pause = false;
+    this.render();
+    try {
+      await work();
+    } catch (error) {
+      this.jobError = {
+        hash: location.hash,
+        message: error.message || "操作未完成，请重试",
+      };
+      if (error.message?.includes("写下"))
+        document.getElementById("field-idea")?.focus();
+    } finally {
+      this.busy = false;
+      clearInterval(this.elapsedTimer);
+      this.canPause = false;
+      this.progress = "";
+      this.render();
+      if (
+        this.scrollAfterJob ||
+        this.jobError ||
+        initialStep !== this.active?.step
+      ) {
+        window.scrollTo(0, 0);
+        this.main.focus({ preventScroll: true });
+      }
+      this.scrollAfterJob = false;
+    }
+  }
+  textConfig() {
+    const c = ConsoleAPI.textConfig();
+    if (c.text_provider === "google" && !c.google_api_key)
+      throw new Error("请在创作设置中填写 Google API Key");
+    if (c.text_provider === "openai" && !c.api_key)
+      throw new Error("请在创作设置中填写 OpenAI API Key");
+    return c;
+  }
+  async plan(d, revise = false) {
+    if (d.mode === "single" && !d.idea.trim()) throw new Error("写下一句想法，就可以开始。");
+    if (d.mode === "series" && d.seriesId?.startsWith("draft-") &&
+        !d.idea.trim() && !d.seriesBrief?.trim())
+      throw new Error("先填写新系列的方向，就可以让 AI 设计剧情。");
+    const c = this.textConfig();
+    this.progress = revise
+      ? "正在根据调整方向重新设计…"
+      : d.mode === "single"
+        ? "正在生成可编辑分镜…"
+        : "正在结合创作原则、系列记忆与经典剧情参考，设计下一话…";
+    this.render();
+    if (d.mode === "single") {
+      await this.store.flush(d.id);
+      const data = await ConsoleAPI.request("/console/storyboard", "POST", {
+        ...c,
+        draft_id: d.id,
+        revise,
+      });
+      d.pages = data.pages;
+      d.aiPages ||= structuredClone(data.pages);
+      d.title = d.title || data.pages[0]?.title || "我的漫画";
+      d.step = reviewStep(d);
+      d.storyDirty = false;
+    } else {
+      const result = await ConsoleAPI.request("/console/plan", "POST", {
+        ...c,
+        idea: [d.seriesBrief, d.idea].filter(Boolean).join("\n"),
+        inspiration_reference: d.inspirationReference || "",
+        series_id: d.seriesId,
+        chapter_count: revise ? 1 : d.chapterCount,
+        revision: revise ? d.revisionText : "",
+        previous: revise ? [d.chapters[d.chapterIndex]] : null,
+      });
+      // Preserve each chapter's rendered history before replacing its story.
+      this.snapshotChapter(d);
+      const old = d.chapters;
+      const revised = result.plan.chapters.map((ch, i) => ({
+        ...ch,
+        aiOriginal: structuredClone(
+          (revise && old[d.chapterIndex]?.aiOriginal) || ch,
+        ),
+        pages: old[revise ? d.chapterIndex : i]?.pages || [],
+        images: old[revise ? d.chapterIndex : i]?.images || {},
+        coverImages: old[revise ? d.chapterIndex : i]?.coverImages || [],
+        storyDirty: true,
+      }));
+      if (revise) d.chapters[d.chapterIndex] = revised[0];
+      else {
+        d.chapters = revised;
+        d.chapterIndex = 0;
+      }
+      d.ruleApplications = result.plan.ruleApplications;
+      d.contextHash = result.plan.contextHash;
+      this.restoreChapter(d);
+      d.step = 2;
+    }
+    d.canonDecision = null;
+    if (revise && d.revisionText?.trim()) {
+      d.revisionRequests ||= {};
+      (d.revisionRequests[String(d.chapterIndex || 0)] ||= []).push(
+        d.revisionText,
+      );
+    }
+    d.revisionText = "";
+    this.snapshotChapter(d);
+    this.changed(d);
+    await this.store.flush(d.id);
+  }
+  async reviseStoryboard(d) {
+    this.progress = "正在根据调整方向修改分镜…";
+    this.render();
+    await this.store.flush(d.id);
+    const result = await ConsoleAPI.request("/console/storyboard", "POST", {
+      ...this.textConfig(),
+      draft_id: d.id,
+      revise: true,
+    });
+    d.aiPages ||= structuredClone(d.pages);
+    d.pages = result.pages.map((page, i) => ({
+      ...page,
+      ...(d.source
+        ? {
+            id:
+              d.source.metadata?.pages?.[i]?.id ||
+              d.pages[i]?.id ||
+              `page-${i + 1}`,
+          }
+        : {}),
+    }));
+    d.storyDirty = false;
+    if (d.revisionText?.trim()) {
+      d.revisionRequests ||= {};
+      (d.revisionRequests[String(d.chapterIndex || 0)] ||= []).push(
+        d.revisionText,
+      );
+    }
+    d.revisionText = "";
+    d.step = reviewStep(d);
+    d.canonDecision = null;
+    this.snapshotChapter(d);
+    this.changed(d);
+    await this.store.flush(d.id);
+    if (d.source) await this.persistReview(d);
+  }
+  snapshotChapter(d) {
+    const ch = d.chapters?.[d.chapterIndex];
+    if (ch)
+      Object.assign(ch, {
+        title: d.title,
+        pages: d.pages,
+        aiPages: d.aiPages,
+        futureGuidance: d.futureGuidance,
+        images: d.images,
+        storyDirty: d.storyDirty,
+        cover: {
+          title: d.coverTitle || ch.cover?.title || d.title,
+          description: d.coverBrief || ch.cover?.description || "",
+        },
+        coverImages: d.coverImages || [],
+      });
+  }
+  restoreChapter(d) {
+    const ch = d.chapters[d.chapterIndex];
+    if (!ch) return;
+    Object.assign(d, {
+      title: ch.title,
+      canonDecision: null,
+      pages: ch.pages || [],
+      aiPages: ch.aiPages || null,
+      futureGuidance: ch.futureGuidance || "",
+      images: ch.images || {},
+      storyDirty: ch.storyDirty ?? true,
+      coverTitle: ch.cover?.title || ch.title,
+      coverBrief: ch.cover?.description || "",
+      coverImages: ch.coverImages || [],
+    });
+  }
+  switchChapter(index) {
+    this.snapshotChapter(this.active);
+    this.active.chapterIndex = index;
+    this.restoreChapter(this.active);
+    if (
+      isPlanned(this.active) &&
+      this.active.step >= 3 &&
+      (!this.active.pages.length || this.active.storyDirty)
+    )
+      this.active.step = 2;
+    this.changed(this.active);
+  }
+  async storyboard(d) {
+    if (d.mode !== "series" || (!d.storyDirty && d.pages.length)) return;
+    this.progress = "正在把本话剧情转换为分镜…";
+    this.render();
+    const c = this.textConfig(),
+      ch = d.chapters[d.chapterIndex];
+    if (!ch) throw new Error("请先设计本话剧情。");
+    await this.store.flush(d.id);
+    const result = await ConsoleAPI.request("/console/storyboard", "POST", {
+      ...c,
+      draft_id: d.id,
+    });
+    d.pages = result.pages;
+    d.aiPages ||= structuredClone(result.pages);
+    d.storyDirty = false;
+    this.snapshotChapter(d);
+    this.changed(d);
+    await this.store.flush(d.id);
+  }
+  source(d) {
+    if (!d.source) return null;
+    const p = d.source;
+    return {
+      series_id: p.seriesId,
+      chapter_id: p.chapterId,
+      ...(p.metadata?.source || {}),
+    };
+  }
+  async generate(d, onlyPage = null) {
+    const config = {
+      ...ConsoleAPI.imageConfig(),
+      consoleDraftId: d.source ? null : d.mode === "series" ? d.id : null,
+    };
+    if (config.imageProvider === "google" && !config.googleApiKey)
+      throw new Error("请在创作设置中填写 Google API Key");
+    if (config.imageProvider === "openai" && !config.openaiApiKey)
+      throw new Error("请在创作设置中填写 OpenAI API Key");
+    if (isPlanned(d) && (d.storyDirty || !d.pages.length)) {
+      await this.storyboard(d);
+      d.step = reviewStep(d);
+      this.output = "sketch";
+      this.changed(d);
+      this.notify("分镜已更新。请确认画面与对白，再开始出图。");
+      return;
+    }
+    await this.store.flush(d.id);
+    if (d.source) await this.persistReview(d);
+    if (!d.pages.length) throw new Error("请先生成分镜。");
+    const indices =
+      onlyPage === null
+        ? d.pages.map((_, i) => i).filter((i) => !isFresh(d, i))
+        : [onlyPage];
+    d.step = outputStep(d);
+    this.canPause = true;
+    for (const i of indices) {
+      this.progress = `正在生成第 ${i + 1} / ${d.pages.length} 页 · 完成的页面自动保留`;
+      this.render();
+      const page = d.pages[i];
+      const previous = d.pages
+        .slice(0, i)
+        .map((_, pi) => currentImage(d.images[pi]))
+        .filter(Boolean)
+        .slice(-2)
+        .map((v) => ({ imageUrl: v.imageUrl }));
+      if (d.reference) previous.unshift(d.reference);
+      const source = this.source(d);
+      const render = source
+        ? {
+            page_index: i,
+            page_id:
+              d.source?.metadata?.pages?.[i]?.id || page.id || `page-${i + 1}`,
+            page_title: page.title,
+            page_script_fingerprint:
+              StoryboardImageReconciler.pageFingerprint(page),
+          }
+        : null;
+      const result = await ComicAPI.generateComicImage(
+        page,
+        await this.sketchData(page),
+        previous,
+        d.style,
+        page.rows.length,
+        d.language,
+        config,
+        source,
+        render,
+      );
+      if (!result.image_url) throw new Error("没有收到生成图片，请重试当前页");
+      d.images[i] ||= { versions: [], current: 0 };
+      d.images[i].versions.push({
+        imageUrl: result.image_url,
+        createdAt: new Date().toISOString(),
+        fingerprint: StoryboardImageReconciler.pageFingerprint(page),
+        prompt: result.prompt,
+        snapshotHash: d.source?.metadata?.source?.snapshot_hash,
+      });
+      d.images[i].current = d.images[i].versions.length - 1;
+      this.snapshotChapter(d);
+      this.changed(d);
+      await this.store.flush(d.id);
+      await this.playDrawing(result.image_url, `第 ${i + 1} 页`);
+      if (this.pause) break;
+    }
+    this.output = "comic";
+    this.notify(
+      this.pause
+        ? "已暂停，已完成页面和版本已保留。"
+        : "漫画已更新，历史版本已保留。",
+    );
+  }
+  async sketchData(page) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1024;
+    canvas.height = 1536;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, 1024, 1536);
+    ctx.strokeStyle = "#252d35";
+    const rows = page.rows,
+      rh = 1400 / Math.max(1, rows.length);
+    rows.forEach((r, ri) =>
+      r.panels.forEach((p, pi) => {
+        const w = 960 / r.panels.length,
+          x = 32 + pi * w,
+          y = 80 + ri * rh;
+        ctx.strokeRect(x + 5, y + 5, w - 10, rh - 10);
+        ctx.fillStyle = "#252d35";
+        ctx.font = "22px sans-serif";
+        const chars = [...p.text];
+        let line = "",
+          dy = 34;
+        for (const ch of chars) {
+          if (ctx.measureText(line + ch).width > w - 40) {
+            ctx.fillText(line, x + 20, y + dy);
+            line = "";
+            dy += 30;
+            if (dy > rh - 25) break;
+          }
+          line += ch;
+        }
+        if (dy <= rh - 25) ctx.fillText(line, x + 20, y + dy);
+      }),
+    );
+    return canvas.toDataURL("image/png");
+  }
+  async importProject(sid, cid) {
+    this.progress = "正在载入已编译分镜与图像版本…";
+    this.render();
+    const result = await ComicAPI.getComicBrainProject(sid, cid),
+      project = result.project;
+    let d = this.store
+      .all()
+      .find((d) => d.source?.seriesId === sid && d.source?.chapterId === cid);
+    if (d) {
+      this.navigate("#draft/" + d.id);
+      return;
+    }
+    d = this.store.create("series", sid);
+    const pkg = result.review && !result.reviewStale ? result.review : project;
+    Object.assign(d, {
+      title: pkg.title || cid,
+      pages: pkg.pages || [],
+      style: pkg.settings?.comic_style || "doraemon",
+      language: pkg.settings?.language || "zh",
+      pageCount: pkg.pages?.length || 3,
+      step: 1,
+      storyDirty: false,
+      coverTitle: pkg.cover?.title,
+      coverBrief:
+        pkg.cover?.brief ||
+        pkg.cover?.visual_brief ||
+        pkg.cover?.description ||
+        "",
+      source: { seriesId: sid, chapterId: cid, metadata: project },
+    });
+    if (result.reviewStale)
+      this.notify("检测到旧草稿与新版分镜冲突，已打开新版；旧 review 未覆盖。");
+    for (const page of result.renders?.pages || []) {
+      const i = page.page_index;
+      d.images[i] = {
+        current: page.current_version || 0,
+        versions: page.versions.map((v) => ({
+          imageUrl: v.image_url,
+          createdAt: v.created_at,
+          fingerprint: v.page_script_fingerprint,
+          snapshotHash:
+            v.snapshot_hash || result.renders?.source?.snapshot_hash,
+        })),
+      };
+    }
+    this.active = d;
+    this.changed(d);
+    await this.store.flush(d.id);
+    this.navigate("#draft/" + d.id);
+  }
+  hydrateProject(result) {
+    const project = result.project,
+      source = project.source || {},
+      sid = source.series_id,
+      cid = source.chapter_id;
+    if (!sid || !cid) return;
+    const pkg = result.review && !result.reviewStale ? result.review : project;
+    const did = `production-${sid}-${cid}`;
+    const existing = this.store.drafts[did];
+    const d = existing || this.store.create("series", sid, did);
+    const history = {
+      pages: d.pages,
+      images: d.images,
+      coverImages: d.coverImages,
+    };
+    if (!existing || !d.pages?.length)
+      Object.assign(d, {
+        title: pkg.title || project.title || cid,
+        pages: pkg.pages || [],
+        aiPages: structuredClone(pkg.pages || []),
+        style: pkg.settings?.comic_style || "reference",
+        language: pkg.settings?.language || "zh",
+        pageCount: pkg.pages?.length || 3,
+        step: 1,
+        storyDirty: false,
+        updatedAt:
+          result.renders?.updated_at || source.exported_at || d.updatedAt,
+        coverTitle: pkg.cover?.title,
+        coverBrief: pkg.cover?.brief || pkg.cover?.description || "",
+        source: { seriesId: sid, chapterId: cid, metadata: project },
+        staleReview: result.reviewStale,
+      });
+    const manifest = { pages: project.pages, images: {} };
+    for (const page of result.renders?.pages || [])
+      manifest.images[page.page_index] = {
+        current: page.current_version || 0,
+        versions: page.versions.map((v) => ({
+          imageUrl: v.image_url,
+          createdAt: v.created_at,
+          fingerprint: v.page_script_fingerprint,
+          snapshotHash:
+            v.snapshot_hash || result.renders?.source?.snapshot_hash,
+        })),
+      };
+    this.mergeSourceVersions(d, [history, manifest]);
+    this.store.local();
+  }
+  saveReview(d) {
+    if (!d.source) return;
+    this.reviewTimers ||= new Map();
+    this.pendingReviews ||= new Set();
+    this.pendingReviews.add(d.id);
+    clearTimeout(this.reviewTimers.get(d.id));
+    this.reviewTimers.set(
+      d.id,
+      setTimeout(
+        () =>
+          this.persistReview(d).catch((e) =>
+            this.notify("分镜同步未完成：" + e.message),
+          ),
+        700,
+      ),
+    );
+  }
+  async persistReview(d) {
+    this.reviewRequests ||= new Map();
+    if (this.reviewRequests.has(d.id)) {
+      await this.reviewRequests.get(d.id);
+      if (!this.pendingReviews?.has(d.id)) return;
+    }
+    clearTimeout(this.reviewTimers?.get(d.id));
+    this.reviewTimers?.delete(d.id);
+    const stamp = d.updatedAt;
+    const operation = ComicAPI.saveComicBrainReview(
+      d.source.seriesId,
+      d.source.chapterId,
+      {
+        ...d.source.metadata,
+        title: d.title,
+        pages: d.pages,
+        cover: {
+          ...(d.source.metadata.cover || {}),
+          title: d.coverTitle,
+          brief: d.coverBrief,
+        },
+        settings: {
+          ...d.source.metadata.settings,
+          comic_style: d.style,
+          language: d.language,
+        },
+      },
+    );
+    this.reviewRequests.set(d.id, operation);
+    try {
+      const result = await operation;
+      if (stamp === d.updatedAt) this.pendingReviews?.delete(d.id);
+      return result;
+    } finally {
+      if (this.reviewRequests.get(d.id) === operation) this.reviewRequests.delete(d.id);
+    }
+  }
+  async reference(file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      this.notify("请使用 PNG、JPEG 或 WebP 图片");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      this.notify("参考图不能超过 10MB");
+      return;
+    }
+    const image = await createImageBitmap(file),
+      scale = Math.min(1, 1024 / Math.max(image.width, image.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width * scale;
+    canvas.height = image.height * scale;
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    image.close();
+    this.active.reference = canvas.toDataURL("image/jpeg", 0.8);
+    this.changed(this.active);
+    this.render();
+  }
+  preview(i) {
+    let dialog = document.getElementById("image-dialog");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "image-dialog";
+      dialog.setAttribute("aria-labelledby", "image-dialog-title");
+      document.body.append(dialog);
+    }
+    dialog.innerHTML = `<div class="dialog-heading"><h2 id="image-dialog-title">第 ${i + 1} 页</h2><button class="quiet-button" data-close-preview>关闭 ×</button></div><img class="full-preview" src="${E(ConsoleAPI.imageURL(currentImage(this.active.images[i]).imageUrl))}" alt="第 ${i + 1} 页漫画放大预览">`;
+    dialog.showModal();
+  }
+  downloadBlob(blob, name) {
+    const u = URL.createObjectURL(blob),
+      a = document.createElement("a");
+    a.href = u;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 1000);
+  }
+  async downloadImage(url, name) {
+    const safe = ConsoleAPI.imageURL(url);
+    if (!safe) throw new Error("图片路径无效");
+    const response = await fetch(safe);
+    if (!response.ok) throw new Error("图片下载失败，请确认本机服务正在运行");
+    this.downloadBlob(await response.blob(), name);
+  }
+  async exportWork(d) {
+    const images = Object.entries(d.images)
+      .map(([i, e]) => ({ i, v: currentImage(e) }))
+      .filter((x) => x.v?.imageUrl);
+    if (!images.length) throw new Error("还没有漫画图片，请先生成。");
+    // One archive avoids browser blocking multiple automatic downloads.
+    const files = [];
+    for (const { i, v } of images) {
+      const r = await fetch(ConsoleAPI.imageURL(v.imageUrl));
+      if (!r.ok) throw new Error(`第 ${Number(i) + 1} 页下载失败`);
+      files.push({
+        name: `page-${Number(i) + 1}.png`,
+        data: new Uint8Array(await r.arrayBuffer()),
+      });
+    }
+    this.downloadBlob(this.zip(files), (d.title || "漫画") + ".zip");
+  }
+  zip(files) {
+    const chunks = [],
+      central = [];
+    let offset = 0;
+    const enc = new TextEncoder();
+    const crc = (bytes) => {
+      let c = 0xffffffff;
+      for (const b of bytes) {
+        c ^= b;
+        for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
+      }
+      return (c ^ 0xffffffff) >>> 0;
+    };
+    for (const file of files) {
+      const name = enc.encode(file.name),
+        len = file.data.length,
+        checksum = crc(file.data),
+        header = new Uint8Array(30 + name.length),
+        v = new DataView(header.buffer);
+      v.setUint32(0, 0x04034b50, true);
+      v.setUint16(4, 20, true);
+      v.setUint32(14, checksum, true);
+      v.setUint32(18, len, true);
+      v.setUint32(22, len, true);
+      v.setUint16(26, name.length, true);
+      header.set(name, 30);
+      chunks.push(header, file.data);
+      const c = new Uint8Array(46 + name.length),
+        cv = new DataView(c.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint32(16, checksum, true);
+      cv.setUint32(20, len, true);
+      cv.setUint32(24, len, true);
+      cv.setUint16(28, name.length, true);
+      cv.setUint32(42, offset, true);
+      c.set(name, 46);
+      central.push(c);
+      offset += header.length + len;
+    }
+    const size = central.reduce((n, c) => n + c.length, 0),
+      end = new Uint8Array(22),
+      v = new DataView(end.buffer);
+    v.setUint32(0, 0x06054b50, true);
+    v.setUint16(8, files.length, true);
+    v.setUint16(10, files.length, true);
+    v.setUint32(12, size, true);
+    v.setUint32(16, offset, true);
+    return new Blob([...chunks, ...central, end], { type: "application/zip" });
+  }
+  async cover(d) {
+    await this.store.flush(d.id);
+    this.progress = "正在生成独立封面…";
+    this.render();
+    const result = await ComicAPI.generateCover(
+      d.style,
+      Object.values(d.images)
+        .map(currentImage)
+        .filter(Boolean)
+        .slice(0, 4)
+        .map((v) => ({ imageUrl: v.imageUrl })),
+      d.language,
+      `标题：${d.coverTitle || d.title}\n描述：${d.coverBrief || d.idea}`,
+      {
+        ...ConsoleAPI.imageConfig(),
+        consoleDraftId: d.source ? null : d.mode === "series" ? d.id : null,
+      },
+      this.source(d),
+    );
+    if (!result.image_url) throw new Error("未收到封面图片");
+    d.coverImages ||= [];
+    d.coverImages.push({
+      imageUrl: result.image_url,
+      createdAt: new Date().toISOString(),
+    });
+    this.snapshotChapter(d);
+    this.changed(d);
+    await this.store.flush(d.id);
+    await this.playDrawing(result.image_url, "封面");
+  }
+  async playDrawing(imageUrl, title) {
+    if (!window.DrawingPlayback ||
+        ConfigManager.loadConfig().drawingPlayback === false ||
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    this.output = "comic";
+    this.render();
+    // Playback is presentation only: a display failure must not retry generation.
+    try {
+      await window.DrawingPlayback.play(ConsoleAPI.imageURL(imageUrl), { title });
+    } catch (error) {
+      console.warn("Drawing playback unavailable", error);
+    }
+  }
+  async social(d, platform) {
+    const c = this.textConfig();
+    this.progress = "正在生成发布文案…";
+    this.render();
+    d.social = await ComicAPI.generateSocialMediaContent(
+      c.api_key,
+      { pages: d.pages },
+      c.base_url,
+      c.model,
+      c.text_provider,
+      c.reasoning_effort,
+      platform,
+      c.google_api_key,
+    );
+    this.changed(d);
+    await this.store.flush(d.id);
+  }
+  async optimize(d) {
+    if (!d.idea.trim()) throw new Error("先写下一句想法，再进行优化。");
+    this.progress = "正在优化创作想法…";
+    this.render();
+    const result = await ConsoleAPI.request("/optimize-prompt", "POST", {
+      ...this.textConfig(),
+      prompt: d.idea,
+      comic_style: d.style,
+      language: d.language,
+    });
+    d.idea = result.optimized_prompt || result.prompt || d.idea;
+    this.changed(d);
+  }
+  async saveToSeries(d) {
+    await this.store.flush(d.id);
+    this.progress = "正在整理本话剧情、复盘修改，并判断对后续创作要求的影响…";
+    this.render();
+    const result = await ConsoleAPI.request("/console/canon/save", "POST", {
+      ...this.textConfig(),
+      draft_id: d.id,
+      revision: d.revision,
+    });
+    this.acceptSavedDraft(d, result.draft);
+    this.notify(
+      result.already_saved
+        ? "本话已在系列中，无需重复保存。"
+        : "本话已保存，下次续写会参考本话剧情、复盘与创作要求。",
+    );
+    await this.refresh();
+  }
+  acceptSavedDraft(d, saved) {
+    Object.assign(d, saved);
+    const snapshot = d.source?.metadata?.source?.snapshot_hash;
+    if (snapshot)
+      for (const [index, entry] of Object.entries(d.images || {})) {
+        const image = currentImage(entry);
+        const page = d.pages?.[Number(index)];
+        if (
+          image &&
+          page &&
+          image.fingerprint === StoryboardImageReconciler.pageFingerprint(page)
+        )
+          image.acceptedSnapshotHash = snapshot;
+      }
+    this.store.drafts[d.id] = d;
+    this.store.local();
+  }
+  async generateRetrospective(d) {
+    await this.store.flush(d.id);
+    this.progress = "正在按当前分镜生成复盘，不会修改剧情或创作原则…";
+    this.render();
+    const result = await ConsoleAPI.request("/console/retrospective", "POST", {
+      ...this.textConfig(),
+      draft_id: d.id,
+      direction: d.retrospectiveDirection || "",
+    });
+    const key = String(d.chapterIndex || 0);
+    d.retrospectives ||= {};
+    const previous = d.retrospectives[key];
+    const history = [...(previous?.history || [])];
+    if (previous?.content)
+      history.push({
+        content: previous.content,
+        basedOn: previous.basedOn,
+        createdAt: new Date().toISOString(),
+      });
+    d.retrospectives[key] = { ...result, history };
+    this.changed(d);
+    this.notify("复盘已生成，可直接修改；需要收录时再保存到系列。");
+  }
+  async saveRetrospective(d) {
+    await this.store.flush(d.id);
+    this.progress = "正在保存本话复盘…";
+    this.render();
+    const result = await ConsoleAPI.request("/console/retrospective", "PUT", {
+      draft_id: d.id,
+      revision: d.revision,
+    });
+    this.acceptSavedDraft(d, result.draft);
+    this.notify("本话复盘已保存，剧情与创作原则保持原样。");
+  }
 }
-
-// Initialize app when DOM is ready
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new UIController();
+window.addEventListener("DOMContentLoaded", () => {
+  window.app = new UIController();
 });
-
-// Export for global access
-window.UIController = UIController;
-
-// Global functions for onclick handlers (backward compatibility)
-function toggleConfig() {
-    if (app) app.toggleConfig();
-}
-
-function toggleAdvancedSettings() {
-    if (app) app.toggleAdvancedSettings();
-}
-
-function saveConfig() {
-    if (app) app.saveConfig();
-}
-
-function generateWithAI() {
-    if (app) app.generateWithAI();
-}
-
-function renderComic() {
-    if (app) app.renderComic();
-}
-
-function downloadComicImage() {
-    if (app) app.downloadCurrentPage();
-}
-
-function removeReferenceImage() {
-    if (app) app.removeReferenceImage();
-}
-
-function triggerReferenceImageUpload() {
-    if (app) app.triggerReferenceImageUpload();
-}
-
-
-
-function prevPage() {
-    if (app) app.prevPage();
-}
-
-function nextPage() {
-    if (app) app.nextPage();
-}
-
-function generateFinalImage() {
-    if (app) app.generateFinalImage();
-}
-
-function generateAllPagesImages() {
-    if (app) app.generateAllPagesImages();
-}
-
-function resumeAllPagesImages() {
-    if (app) app.generateAllPagesImages({ resume: true });
-}
-
-function generateXiaohongshuContent() {
-    if (app) app.generateXiaohongshuContent();
-}
-
-function generateCover() {
-    if (app) app.showCoverCustomPanel();
-}
-
-function showCoverCustomPanel() {
-    if (app) app.showCoverCustomPanel();
-}
-
-function hideCoverCustomPanel() {
-    if (app) app.hideCoverCustomPanel();
-}
-
-function generateCoverWithCustom() {
-    if (app) app.generateCoverWithCustom();
-}
-
-function toggleView() {
-    if (app) app.toggleView();
-}
-
-function changeLanguage(lang) {
-    if (window.i18n) {
-        window.i18n.setLanguage(lang);
-    }
-
-    // Sync comic language with interface language
-    const comicLanguageSelect = document.getElementById('comic-language');
-    if (comicLanguageSelect) {
-        comicLanguageSelect.value = lang;
-    }
-    if (app) {
-        app.saveCurrentSessionState();
-        app.scheduleComicBrainReviewSave();
-    }
-}
-
-// Session management global functions
-function switchToSession(sessionId) {
-    if (app) app.switchToSession(sessionId);
-}
-
-function createNewSession() {
-    if (app) app.createNewSession();
-}
-
-function toggleSessionManager() {
-    if (app) app.toggleSessionManager();
-}
-
-function refreshComicBrainProjects() {
-    if (app) app.refreshComicBrainProjects();
-}
-
-function loadComicBrainProject() {
-    if (app) app.loadComicBrainProject();
-}
-
-/**
- * Toggle export dropdown menu
- */
-function toggleExportMenu() {
-    const dropdown = document.getElementById('export-dropdown');
-    if (dropdown) {
-        dropdown.classList.toggle('open');
-    }
-}
-
-// Close export menu when clicking outside
-document.addEventListener('click', function (event) {
-    const dropdown = document.getElementById('export-dropdown');
-    if (dropdown && !dropdown.contains(event.target)) {
-        dropdown.classList.remove('open');
-    }
-});
-// Helper for simple display (re-adding simplified version for cover)
-// Re-adding this method to UIController class as we removed it previously
-UIController.prototype.displayGeneratedImage = function (imageUrl) {
-    // Create modal overlay
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-            cursor: pointer;
-        `;
-
-    // Create image container
-    const imgContainer = document.createElement('div');
-    imgContainer.style.cssText = `
-            max-width: 90%;
-            max-height: 90%;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        `;
-
-    // Title
-    const title = document.createElement('h3');
-    title.innerText = window.i18n.t('modalCoverTitle');
-    title.style.textAlign = 'center';
-    title.style.margin = '0 0 10px 0';
-
-    // Create image
-    const img = document.createElement('img');
-    img.src = imageUrl;
-    img.style.cssText = `
-            max-width: 100%;
-            max-height: 70vh;
-            display: block;
-            border-radius: 4px;
-        `;
-
-    // Create download button
-    const downloadBtn = document.createElement('button');
-    downloadBtn.innerText = window.i18n.t('btnDownloadImage');
-    downloadBtn.style.cssText = `
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            width: 100%;
-        `;
-    downloadBtn.onclick = (e) => {
-        e.stopPropagation();
-        this.downloadImageFromUrl(imageUrl);
-    };
-
-    // Create close button
-    const closeBtn = document.createElement('button');
-    closeBtn.innerText = window.i18n.t('btnClose');
-    closeBtn.style.cssText = `
-            padding: 10px 20px;
-            background-color: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            width: 100%;
-        `;
-    closeBtn.onclick = (e) => {
-        e.stopPropagation();
-        document.body.removeChild(modal);
-    };
-
-    // Assemble modal
-    imgContainer.appendChild(title);
-    imgContainer.appendChild(img);
-    imgContainer.appendChild(downloadBtn);
-    imgContainer.appendChild(closeBtn);
-    modal.appendChild(imgContainer);
-
-    // Close on background click
-    modal.onclick = () => {
-        document.body.removeChild(modal);
-    };
-
-    // Prevent closing when clicking on image container
-    imgContainer.onclick = (e) => {
-        e.stopPropagation();
-    };
-
-    // Add to page
-    document.body.appendChild(modal);
-};
-
-/**
- * Global function for optimize prompt button
- */
-function optimizePrompt() {
-    if (app) {
-        app.optimizePrompt();
-    }
-}

@@ -13,3 +13,6 @@ dependencies = [
     "pillow==12.0.0",
     "langchain-openai>=1.1.6",
 ]
+
+[dependency-groups]
+desktop = ["pyinstaller>=6.16,<7"]

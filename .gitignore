@@ -11,6 +11,7 @@ ENV/
 dist/
 build/
 .tools/
+node_modules/
 
 # Environment variables
 .env

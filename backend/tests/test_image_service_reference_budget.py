@@ -128,6 +128,8 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
 
         self.assertEqual("/backend/static/images/fake.png", result)
         self.assertEqual(2, len(request_bodies))
+        self.assertEqual('gpt-6.1-sol', request_bodies[0]['model'])
+        self.assertEqual('gpt-image-2', request_bodies[0]['tools'][0]['model'])
         retry_text = request_bodies[1]["input"][0]["content"][0]["text"]
         self.assertIn("CRITICAL RETRY CORRECTION", retry_text)
         self.assertIn("exactly 1024x1536", retry_text)

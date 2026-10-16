@@ -12,10 +12,32 @@ const DEFAULT_CONFIG = {
     imageModel: 'gpt-image-2',
     customImageModel: '',
     imageSize: '1024x1536',
-    imageQuality: 'medium'
+    imageQuality: 'medium',
+    drawingPlayback: true
 };
 
 class ConfigManager {
+    static readSecret(key) {
+        if (!window.DesktopHost?.getSecret) return localStorage.getItem(key) || '';
+        const result = window.DesktopHost.getSecret(key);
+        if (!result.ok) throw new Error(result.error || '凭据暂不可用');
+        const legacy = localStorage.getItem(key);
+        if (legacy) {
+            const saved = window.DesktopHost.setSecret(key, result.value || legacy);
+            if (!saved.ok) throw new Error(saved.error || '凭据迁移失败');
+            localStorage.removeItem(key);
+        }
+        return result.value || legacy || '';
+    }
+
+    static writeSecret(key, value) {
+        if (window.DesktopHost?.setSecret) {
+            const result = window.DesktopHost.setSecret(key, value);
+            if (!result.ok) throw new Error(result.error || '凭据未保存');
+            localStorage.removeItem(key);
+        } else if (value) localStorage.setItem(key, value);
+        else localStorage.removeItem(key);
+    }
     /**
      * Load configuration from localStorage
      * @returns {Object} Configuration object
@@ -104,7 +126,7 @@ class ConfigManager {
      */
     static loadApiKey() {
         try {
-            return localStorage.getItem('comic_api_key') || '';
+            return this.readSecret('comic_api_key');
         } catch (e) {
             console.error('Failed to load API key:', e);
             return '';
@@ -119,11 +141,7 @@ class ConfigManager {
     static saveApiKey(apiKey) {
         try {
             const trimmedKey = apiKey.trim();
-            if (trimmedKey) {
-                localStorage.setItem('comic_api_key', trimmedKey);
-            } else {
-                localStorage.removeItem('comic_api_key');
-            }
+            this.writeSecret('comic_api_key', trimmedKey);
             return true;
         } catch (e) {
             console.error('Failed to save API key:', e);
@@ -137,7 +155,7 @@ class ConfigManager {
      */
     static loadGoogleApiKey() {
         try {
-            return localStorage.getItem('comic_google_api_key') || '';
+            return this.readSecret('comic_google_api_key');
         } catch (e) {
             console.error('Failed to load Google API key:', e);
             return '';
@@ -152,11 +170,7 @@ class ConfigManager {
     static saveGoogleApiKey(apiKey) {
         try {
             const trimmedKey = apiKey.trim();
-            if (trimmedKey) {
-                localStorage.setItem('comic_google_api_key', trimmedKey);
-            } else {
-                localStorage.removeItem('comic_google_api_key');
-            }
+            this.writeSecret('comic_google_api_key', trimmedKey);
             return true;
         } catch (e) {
             console.error('Failed to save Google API key:', e);
@@ -170,8 +184,8 @@ class ConfigManager {
     static clearConfig() {
         try {
             localStorage.removeItem('comic_ai_config');
-            localStorage.removeItem('comic_api_key');
-            localStorage.removeItem('comic_google_api_key');
+            this.writeSecret('comic_api_key', '');
+            this.writeSecret('comic_google_api_key', '');
         } catch (e) {
             console.error('Failed to clear config:', e);
         }

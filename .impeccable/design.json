@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-11T13:05:33.795108+00:00",
+  "title": "Design System: ComicPerfect console",
+  "extensions": {
+    "shadows": [
+      {
+        "name": "selected-segment",
+        "value": "0 1px 3px var(--border)",
+        "purpose": "Small lift for the selected segmented control."
+      },
+      {
+        "name": "toast",
+        "value": "0 8px 35px var(--border)",
+        "purpose": "Transient status above the work."
+      }
+    ],
+    "motion": [
+      {
+        "name": "card-hover",
+        "value": "transform 0.18s, border-color 0.18s",
+        "purpose": "Card rises 3px and its border turns green on hover; disabled under reduced motion."
+      },
+      {
+        "name": "spinner",
+        "value": "spin 1s linear infinite",
+        "purpose": "Indicate active generation; disabled under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide",
+        "value": "1550px"
+      },
+      {
+        "name": "compact-desktop",
+        "value": "1150px"
+      },
+      {
+        "name": "rail",
+        "value": "850px"
+      },
+      {
+        "name": "top-navigation",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Explicit action after storyboard review; text generation and rendering remain separate.",
+      "html": "<button class=\"ds-button-primary\">确认分镜，生成漫画 →</button>",
+      "css": ".ds-button-primary{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:10px 17px;border-radius:7px;font-weight:500;cursor:pointer;border:1px solid var(--brand,#386e69);background:var(--brand,#386e69);color:var(--surface,#fff)}.ds-button-primary:hover{filter:brightness(.96)}.ds-button-primary:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}.ds-button-primary:disabled{opacity:.48;cursor:not-allowed}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary editing action.",
+      "html": "<button class=\"ds-button-secondary\">返回调整剧情</button>",
+      "css": ".ds-button-secondary{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:10px 17px;border-radius:7px;font-weight:500;cursor:pointer;border:1px solid var(--border,#e0e2e4);background:var(--surface,#fff);color:var(--ink,#252d35)}.ds-button-secondary:hover{filter:brightness(.96)}.ds-button-secondary:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}.ds-button-secondary:disabled{opacity:.48;cursor:not-allowed}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labeled story input with green keyboard focus.",
+      "html": "<label class=\"ds-label\" for=\"ds-story\">创作想法</label><input class=\"ds-input\" id=\"ds-story\" placeholder=\"人物想要什么？\">",
+      "css": ".ds-label{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;display:block;font-weight:500;margin-bottom:9px}.ds-input{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;width:100%;padding:11px 13px;border:1px solid var(--border,#e0e2e4);border-radius:6px;background:var(--surface,#fff);color:var(--ink,#252d35);caret-color:var(--brand,#386e69)}.ds-input::placeholder{color:var(--muted,#626e79)}.ds-input:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "Current console destination.",
+      "html": "<nav><a class=\"ds-nav\" href=\"#series\" aria-current=\"page\"><span aria-hidden=\"true\">▤</span> 我的系列</a></nav>",
+      "css": ".ds-nav{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;display:flex;align-items:center;gap:12px;min-height:44px;padding:12px;border-radius:7px;background:var(--tint,#eff3f3);color:var(--brand,#386e69);font-weight:600;text-decoration:none}.ds-nav:hover{background:var(--background,#f7f8fa)}.ds-nav:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Compact noninteractive work-state label.",
+      "html": "<span class=\"ds-badge\">已定稿</span>",
+      "css": ".ds-badge{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;display:inline-flex;padding:2px 8px;border-radius:5px;background:var(--tint,#eff3f3);color:var(--brand,#386e69);white-space:nowrap}"
+    },
+    {
+      "name": "Context Paper",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Quiet context and rule container alongside the editor.",
+      "html": "<section class=\"ds-panel\"><h3>先把故事讲顺</h3><p>直接修改正文，或用一句话描述调整方向。</p></section>",
+      "css": ".ds-panel{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;padding:24px;border:1px solid var(--border,#e0e2e4);border-radius:var(--radius,10px);background:var(--surface,#fff);color:var(--ink,#252d35);line-height:1.6}.ds-panel h3{margin:0;font-size:16px;font-weight:600}.ds-panel p{margin:8px 0 0;color:var(--muted,#626e79)}"
+    },
+    {
+      "name": "Review Disclosure",
+      "kind": "custom",
+      "description": "Actual proposed canon content revealed beneath its file path.",
+      "html": "<details class=\"ds-details\"><summary>查看拟写入内容</summary><pre class=\"ds-canon\">具体变更由本次预览返回。</pre></details>",
+      "css": ".ds-details{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;border-top:1px solid var(--border,#e0e2e4);padding-top:16px;margin-top:20px}.ds-details summary{cursor:pointer;color:var(--muted,#626e79)}.ds-details summary:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}.ds-canon{font:inherit;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;background:var(--background,#f7f8fa);color:var(--ink,#252d35)}"
+    },
+    {
+      "name": "Unified Chapter Row",
+      "kind": "custom",
+      "description": "One chapter joins story, storyboard and image progress, with a clear action.",
+      "html": "<article class=\"ds-chapter\"><div><h3>第一话 · 故事标题</h3><p>3 页分镜 · 故事尚未定稿</p><details><summary>故事概要与章节卡</summary><p>本话故事概要</p></details></div><a href=\"#draft/example\">检查分镜并出图</a></article>",
+      "css": ".ds-chapter{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;color:var(--ink,#252d35);display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 0;border-bottom:1px solid var(--border,#e0e2e4)}.ds-chapter h3{margin:0;font-size:16px;font-weight:600}.ds-chapter p{margin:8px 0 12px;color:var(--muted,#626e79)}.ds-chapter a{background:var(--brand,#386e69);color:var(--surface,#fff);padding:10px 17px;border-radius:7px;text-decoration:none;min-height:24px}.ds-chapter a:hover{filter:brightness(.96)}.ds-chapter summary{cursor:pointer}.ds-chapter a:focus-visible,.ds-chapter summary:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}"
+    },
+    {
+      "name": "Purpose-titled Context Document",
+      "kind": "custom",
+      "description": "A grouped disclosure names the document purpose and reveals readable content.",
+      "html": "<section class=\"ds-context\"><h3>故事与创作方向</h3><details><summary>创作约束</summary><p>当前系列的创作依据随生成自动带入，可按需阅读。</p></details></section>",
+      "css": ".ds-context{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;color:var(--ink,#252d35);line-height:1.6}.ds-context h3{font-size:16px;margin:0 0 8px}.ds-context details{padding:14px 0;border-bottom:1px solid var(--border,#e0e2e4)}.ds-context summary{font-weight:500;cursor:pointer}.ds-context summary:hover{color:var(--brand,#386e69)}.ds-context summary:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}.ds-context p{max-width:75ch;line-height:1.9;padding:16px 0 8px;margin:0}"
+    },
+    {
+      "name": "Creation Stages",
+      "kind": "nav",
+      "description": "Wrapping five-stage series navigation preserves readable labels and a distinct storyboard review.",
+      "html": "<nav class=\"ds-stages\" aria-label=\"创作阶段\"><button>了解系列</button><button>描述想法</button><button>调整剧情</button><button aria-current=\"step\">确认分镜</button><button disabled>生成漫画</button></nav>",
+      "css": ".ds-stages{display:flex;flex-wrap:wrap;gap:12px 24px}.ds-stages button{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:14px;color:var(--ink,#252d35);border:0;background:transparent;padding:8px 0;cursor:pointer}.ds-stages button[aria-current]{color:var(--brand,#386e69);font-weight:600}.ds-stages button:hover{color:var(--brand,#386e69)}.ds-stages button:focus-visible{outline:2px solid var(--brand,#386e69);outline-offset:4px}.ds-stages button:disabled{opacity:.48;cursor:not-allowed}"
+    }
+  ],
+  "narrative": {
+    "northStar": "ComicPerfect console",
+    "overview": "The user-supplied `/Users/lihaozhe/Downloads/comicperfect-ux.html` is the visual and interaction authority. This document records the shipped implementation in Operate mode; it does not introduce a new visual direction. The source of truth for extracted values is `frontend/css/style.css`, including its production overrides, with the shell direction contract in `index.html`, view patterns in `frontend/js/consoleViews.js`, transitions in `frontend/js/app.js` and draft migration in `frontend/js/consoleStore.js`.\n\nThe workspace uses light paper, restrained green accents, fine borders and compact Chinese typography. Persistent navigation and a breadcrumb frame the work. Series context and drafting stay close together; generated pages and historical versions remain readable as their own artifacts.",
+    "keyCharacteristics": [
+      "Quiet paper surfaces with fine neutral borders.",
+      "A persistent desktop sidebar and responsive top navigation.",
+      "Five-stage series planning and three-stage standalone or imported editors.",
+      "Unified chapter rows, purpose-titled documents and selectable image versions.",
+      "Secondary operations revealed through disclosures."
+    ],
+    "rules": [
+      {
+        "name": "The Reference Rule",
+        "body": "Preserve the supplied green and light paper identity when extending the console.",
+        "section": "colors"
+      },
+      {
+        "name": "The Review Before Render Rule",
+        "body": "Keep story adjustment, storyboard confirmation and image generation visibly distinct; the primary action must name the next artifact it creates.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do preserve the supplied reference's shell, spacing, green accent, light paper and component proportions.",
+      "Do keep settings and principles reachable at both compact navigation breakpoints.",
+      "Do show real series, resumed drafts, autosave feedback and preserved image versions.",
+      "Do keep one row per chapter and label grouped documents by their purpose.",
+      "Do show storyboard confirmation before image generation, with readable page labels and explicit next actions.",
+      "Do preserve the return path from settings and offer retry without discarding completed content.",
+      "Do make concrete canon changes reviewable before explicit confirmation.",
+      "Do retain visible keyboard focus, readable wrapping, status announcements and reduced-motion behavior."
+    ],
+    "donts": [
+      "Don't substitute a new visual direction for the user-supplied console.",
+      "Don't populate production galleries with prototype examples presented as real work.",
+      "Don't hide historical images when the storyboard changes.",
+      "Don't repeat the same chapter as separate story and storyboard listings or use identical generic setting titles.",
+      "Don't replace concrete canon previews with a generic confirmation prompt.",
+      "Don't let advanced settings displace the primary story-editing task."
+    ]
+  }
+}

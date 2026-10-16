@@ -67,13 +67,8 @@ class ComicBrainProjectService:
 
     @classmethod
     def comicbrain_root(cls) -> Path:
-        configured_root = os.getenv("COMICBRAIN_ROOT")
-        if configured_root:
-            return Path(configured_root).expanduser().resolve()
-
-        backend_dir = Path(__file__).resolve().parent.parent
-        comic_alpha_root = backend_dir.parent
-        return (comic_alpha_root / "ComicBrain").resolve()
+        from runtime_paths import workspace_directory
+        return workspace_directory()
 
     @classmethod
     def validate_project_id(cls, value: Any, field_name: str) -> str:

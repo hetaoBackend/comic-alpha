@@ -14,12 +14,13 @@ from google import genai
 from google.genai.types import GenerateContentConfig, ImageConfig, FinishReason
 from openai import OpenAI
 from PIL import Image, ImageOps
+from runtime_paths import generated_image_path, image_directory
 
 logger = logging.getLogger(__name__)
 load_dotenv()
 
 CODEX_RESPONSES_BASE_URL = "https://chatgpt.com/backend-api/codex"
-CODEX_IMAGE_RESPONSES_MODEL = "gpt-5.5"
+CODEX_IMAGE_RESPONSES_MODEL = os.getenv("CODEX_IMAGE_RESPONSES_MODEL", "gpt-6.1-sol")
 CODEX_IMAGE_INSTRUCTIONS = """You are an image generation assistant for illustrated comic pages and covers.
 Follow the user's layout, character, and rendering requirements precisely. Unless the scene explicitly
 requires low-key lighting, render with bright high-key exposure, clean illuminated midtones, readable
@@ -53,11 +54,9 @@ def _load_reference_image_for_openai(
             resp = requests.get(img_str, timeout=60)
             resp.raise_for_status()
             img = Image.open(io.BytesIO(resp.content))
-        elif img_str.startswith("/backend/static/images/"):
+        elif img_str.startswith(("/backend/static/images/", "/static/images/")):
             logger.info(f"Loading OpenAI generated-page reference: {img_str}")
-            filename = img_str.replace("/backend/static/images/", "")
-            image_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "images", filename)
-            img = Image.open(image_path)
+            img = Image.open(generated_image_path(img_str))
         elif os.path.isabs(img_str) and os.path.isfile(img_str):
             logger.info(f"Loading OpenAI local reference image: {img_str}")
             img = Image.open(img_str)
@@ -510,8 +509,7 @@ def _save_generated_image(
     ) -> str:
     """Save generated output as PNG, normalizing to the requested canvas."""
     filename = f"{uuid.uuid4()}.png"
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    static_dir = os.path.join(base_dir, "static", "images")
+    static_dir = str(image_directory())
     os.makedirs(static_dir, exist_ok=True)
 
     save_path = os.path.join(static_dir, filename)
@@ -649,10 +647,9 @@ def generate_social_media_image_core(
                     resp.raise_for_status()
                     img = Image.open(io.BytesIO(resp.content))
                     contents.append(img)
-                elif img_str.startswith("/backend/static/images/"):
+                elif img_str.startswith(("/backend/static/images/", "/static/images/")):
                     logger.info(f"Processing reference image: {img_str}")
-                    img_str = img_str.replace("/backend/", "")
-                    img = Image.open(f"{os.getcwd()}/{img_str}")
+                    img = Image.open(generated_image_path(img_str))
                     contents.append(img)
                 elif os.path.isabs(img_str) and os.path.isfile(img_str):
                     # Handle local absolute file paths (e.g., character reference images)

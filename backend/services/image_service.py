@@ -103,8 +103,8 @@ class ImageService:
 
     @staticmethod
     def _project_root() -> str:
-        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.dirname(backend_dir)
+        from runtime_paths import resource_root
+        return str(resource_root())
 
     @staticmethod
     def _env_int(name: str, default: int) -> int:
@@ -206,9 +206,8 @@ class ImageService:
         if not filename or os.path.basename(filename) != filename:
             return None
 
-        image_path = os.path.join(
-            ImageService._project_root(), "backend", "static", "images", filename
-        )
+        from runtime_paths import generated_image_path
+        image_path = generated_image_path(image_url)
         try:
             with Image.open(image_path) as source:
                 return ImageOps.exif_transpose(source).size

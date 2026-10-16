@@ -23,6 +23,10 @@ def is_trusted_local_request() -> bool:
         return False
 
     origin = request.headers.get("Origin")
+    # Only the inherited desktop pipe transport sets this WSGI marker. It is
+    # not a request header and cannot be asserted by a Web client.
+    if request.environ.get('comic.desktop_ipc') is True:
+        return origin is None or origin == 'comicperfect://app'
     if origin is None:
         return True
     if not origin or origin == "null":

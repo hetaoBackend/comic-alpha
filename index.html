@@ -1,536 +1,113 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>comic-perfect</title>
-    <link rel="icon" type="image/jpeg" href="assets/favicon.jpeg">
-    <link rel="stylesheet" href="frontend/css/style.css?v=14">
-</head>
-
-<body>
-
-    <!-- Left Editor Container -->
-    <div class="editor-container">
-        <div class="header-row">
-            <h3 data-i18n="appName">ComicPerfect</h3>
-            <div class="header-buttons">
-                <button onclick="toggleConfig()" class="icon-btn" id="config-btn" title="Config">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <path
-                            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z">
-                        </path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                </button>
-                <!-- Export Dropdown -->
-                <div class="export-dropdown" id="export-dropdown">
-                    <button onclick="toggleExportMenu()" class="icon-btn" title="Export">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path
-                                d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15"
-                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            <polyline points="17,8 12,3 7,8" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round" />
-                            <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </button>
-                    <div class="export-menu" id="export-menu">
-                        <button onclick="generateXiaohongshuContent(); toggleExportMenu();" class="export-menu-item"
-                            id="xiaohongshu-btn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                <path
-                                    d="M4 4H20C20.5523 4 21 4.44772 21 5V19C21 19.5523 20.5523 20 20 20H4C3.44772 20 3 19.5523 3 19V5C3 4.44772 3.44772 4 4 4Z"
-                                    stroke="currentColor" stroke-width="2" />
-                                <path d="M7 8H17M7 12H17M7 16H13" stroke="currentColor" stroke-width="2"
-                                    stroke-linecap="round" />
-                            </svg>
-                            <span data-i18n="socialMediaContent">生成社媒文案</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <link rel="icon" type="image/png" href="assets/brand/comicperfect-logo.png" />
+    <link rel="apple-touch-icon" href="assets/brand/comicperfect-logo.png" />
+    <title>ComicPerfect · 创作工作台</title>
+    <link rel="stylesheet" href="frontend/css/style.css?v=9f5c7d6b3c" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳转到内容</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <a class="brand" href="#home"
+          ><img class="brand-logo" src="assets/brand/comicperfect-logo.png" alt="" width="42" height="42"
+          />
+          <span>ComicPerfect<small>让故事，一格格发生</small></span></a
+        >
+        <nav class="main-nav">
+          <a href="#home" data-nav="home" aria-label="创作工作台"
+            ><span class="nav-icon" aria-hidden="true">▦</span>创作工作台</a
+          >
+          <a href="#series" data-nav="series" aria-label="我的系列"
+            ><span class="nav-icon" aria-hidden="true">▤</span>我的系列</a
+          >
+          <a href="#library" data-nav="library" aria-label="漫画作品"
+            ><span class="nav-icon" aria-hidden="true">▧</span>漫画作品</a
+          >
+          <a href="#principles" data-nav="principles" aria-label="创作原则"
+            ><span class="nav-icon" aria-hidden="true">≡</span>创作原则</a
+          >
+        </nav>
+        <div class="sidebar-bottom">
+          <a class="workspace-switch" href="#workspace"><span id="workspace-name">本机创作空间</span><small>选择或切换空间</small></a>
+          <a class="settings-link" href="#settings"
+            >创作设置 <span aria-hidden="true">↗</span></a
+          >
+          <div class="profile">
+            <span class="avatar">创</span
+            ><span>我的创作空间<small>本机工作空间</small></span>
+          </div>
         </div>
-
-        <!-- Configuration Panel -->
-        <div id="config-panel" class="config-panel">
-            <h4 data-i18n="configTitle">AI 模型配置</h4>
-            <div class="flex-col">
-                <!-- Theme and Language Row -->
-                <div class="config-row-inline">
-                    <div class="config-item-half">
-                        <label data-i18n="themeLabel">主题</label>
-                        <button onclick="toggleTheme()" class="theme-toggle-btn" id="theme-btn">
-                            <span class="theme-icon">☀️</span>
-                            <span data-i18n="themeBtnLight">浅色</span>
-                        </button>
-                    </div>
-                    <div class="config-item-half">
-                        <label data-i18n="languageLabelShort">语言</label>
-                        <select id="language-select" class="language-select" onchange="changeLanguage(this.value)">
-                            <option value="en">English</option>
-                            <option value="zh">中文</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="model-mode-section">
-                    <label data-i18n="modelModeLabel">模型来源</label>
-                    <select id="model-provider-select">
-                        <option value="codex" data-i18n="modelProviderCodex">Codex（免 Key）</option>
-                        <option value="google" data-i18n="modelProviderGoogle">Google Gemini</option>
-                        <option value="openai" data-i18n="modelProviderOpenAI">OpenAI / 兼容接口</option>
-                    </select>
-                    <div id="model-provider-help" class="config-helper" data-i18n="modelProviderCodexHelp">
-                        使用本机 Codex 登录生成文本和图片，无需额外配置。
-                    </div>
-                </div>
-
-                <div id="google-credential-config" class="credential-panel" style="display: none;">
-                    <label data-i18n="googleApiKeyLabel">Google API Key</label>
-                    <input type="password" id="google-api-key" data-i18n="googleApiKeyPlaceholder"
-                        placeholder="输入你的 Google API Key (用于智能生成)">
-                </div>
-
-                <div id="openai-credential-config" class="credential-panel" style="display: none;">
-                    <div class="credential-field">
-                        <label data-i18n="apiKeyLabel">OpenAI / API Key</label>
-                        <input type="password" id="api-key" data-i18n="apiKeyPlaceholder"
-                            placeholder="输入你的 OpenAI API Key">
-                    </div>
-                    <div>
-                        <label data-i18n="baseUrlLabel">Base URL</label>
-                        <input type="text" id="base-url" data-i18n="baseUrlPlaceholder"
-                            placeholder="https://api.openai.com/v1">
-                    </div>
-                </div>
-
-                <!-- Advanced Config Toggle -->
-                <div class="advanced-toggle" onclick="toggleAdvancedSettings()">
-                    <svg id="advanced-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" style="transition: transform 0.3s;">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                    <span data-i18n="advancedSettings">模型细节（可选）</span>
-                </div>
-
-                <!-- Advanced Config Panel -->
-                <div id="advanced-config" class="advanced-config-panel" style="display: none;">
-                    <div id="text-model-config">
-                        <label data-i18n="modelLabel">Text Model</label>
-                        <select id="model-select">
-                            <option value="gpt-6.1-sol" data-codex-supported="true">gpt-6.1-sol</option>
-                            <option value="gpt-6-astra" data-codex-supported="true">gpt-6-astra</option>
-                            <option value="gpt-6-sol" data-codex-supported="true">gpt-6-sol</option>
-                            <option value="gpt-6-luna" data-codex-supported="true">gpt-6-luna</option>
-                            <option value="gpt-5.6-sol" data-codex-supported="true">gpt-5.6-sol</option>
-                            <option value="gpt-5.6-terra" data-codex-supported="true">gpt-5.6-terra</option>
-                            <option value="gpt-5.6-luna" data-codex-supported="true">gpt-5.6-luna</option>
-                            <option value="gpt-5.5">gpt-5.5</option>
-                            <option value="gpt-5.4-mini">gpt-5.4-mini</option>
-                            <option value="gpt-5.3-codex-spark">gpt-5.3-codex-spark</option>
-                            <option value="gpt-4o-mini">gpt-4o-mini</option>
-                            <option value="gpt-4o">gpt-4o</option>
-                            <option value="gpt-4-turbo">gpt-4-turbo</option>
-                            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                            <option value="custom" data-i18n="customModelLabel">自定义模型</option>
-                        </select>
-                    </div>
-                    <div id="custom-model-input" style="display: none;">
-                        <label data-i18n="customModelLabel">自定义模型名称</label>
-                        <input type="text" id="custom-model" data-i18n="customModelPlaceholder" placeholder="输入模型名称">
-                    </div>
-                    <div id="reasoning-effort-config">
-                        <label data-i18n="reasoningEffortLabel">Reasoning Effort</label>
-                        <select id="reasoning-effort-select">
-                            <option value="low">low</option>
-                            <option value="medium" selected>medium</option>
-                            <option value="high">high</option>
-                        </select>
-                    </div>
-                    <div id="image-provider-config">
-                        <label data-i18n="imageProviderLabel">Image Provider</label>
-                        <select id="image-provider-select">
-                            <option value="codex" data-i18n="imageProviderCodex">Codex Credential + GPT Image</option>
-                            <option value="google" data-i18n="imageProviderGoogle">Google Gemini</option>
-                            <option value="openai" data-i18n="imageProviderOpenAI">OpenAI GPT Image</option>
-                        </select>
-                        <div class="config-helper" data-i18n="imageProviderHint">
-                            通常保持和“模型来源”一致即可。
-                        </div>
-                    </div>
-                    <div id="openai-image-config" style="display: none;">
-                        <div style="margin-bottom: 15px;">
-                            <label data-i18n="imageModelLabel">Image Model</label>
-                            <select id="image-model-select">
-                                <option value="gpt-image-2">gpt-image-2</option>
-                                <option value="gpt-image-1.5">gpt-image-1.5</option>
-                                <option value="gpt-image-1">gpt-image-1</option>
-                                <option value="gpt-image-1-mini">gpt-image-1-mini</option>
-                                <option value="custom" data-i18n="customImageModelLabel">自定义图片模型</option>
-                            </select>
-                        </div>
-                        <div id="custom-image-model-input" style="display: none; margin-bottom: 15px;">
-                            <label data-i18n="customImageModelLabel">自定义图片模型名称</label>
-                            <input type="text" id="custom-image-model" data-i18n="customImageModelPlaceholder" placeholder="输入图片模型名称">
-                        </div>
-                        <div class="config-row-inline">
-                            <div class="config-item-half">
-                                <label data-i18n="imageSizeLabel">Image Size</label>
-                                <select id="image-size-select">
-                                    <option value="1024x1536">1024x1536</option>
-                                    <option value="1024x1024">1024x1024</option>
-                                    <option value="1536x1024">1536x1024</option>
-                                    <option value="auto">auto</option>
-                                </select>
-                            </div>
-                            <div class="config-item-half">
-                                <label data-i18n="imageQualityLabel">Quality</label>
-                                <select id="image-quality-select">
-                                    <option value="medium">medium</option>
-                                    <option value="low">low</option>
-                                    <option value="high">high</option>
-                                    <option value="auto">auto</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <button onclick="saveConfig()" class="save-config-btn" data-i18n="saveConfigBtn">保存</button>
-            </div>
-        </div>
-
-        <!-- AI Generation Section -->
-        <div class="ai-section">
-            <div class="flex-row">
-                <label style="white-space: nowrap;" data-i18n="pageCountLabel">生成页数:</label>
-                <input type="number" id="page-count" value="3" min="1" max="10" style="flex: 1;">
-            </div>
-            <div class="flex-row">
-                <label style="white-space: nowrap;" data-i18n="rowsPerPageLabel">每页行数:</label>
-                <select id="rows-per-page" style="flex: 1;">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4" selected>4</option>
-                    <option value="5">5</option>
-                </select>
-            </div>
-            <div class="flex-row">
-                <label style="white-space: nowrap;" data-i18n="comicStyleLabel">漫画风格:</label>
-                <select id="comic-style" style="flex: 1;">
-                    <option value="reference" data-i18n="styleReference">跟随参考图画风</option>
-                    <option value="doraemon" data-i18n="styleDoraemon">哆啦A梦风格</option>
-                    <option value="american" data-i18n="styleAmerican">美式漫画风格</option>
-                    <option value="watercolor" data-i18n="styleWatercolor">水彩风格</option>
-                    <option value="disney" data-i18n="styleDisney">迪士尼动画风格</option>
-                    <option value="ghibli" data-i18n="styleGhibli">宫崎骏/吉卜力风格</option>
-                    <option value="pixar" data-i18n="stylePixar">皮克斯动画风格</option>
-                    <option value="shonen" data-i18n="styleShonen">日本少年漫画风格</option>
-                    <option value="tom_and_jerry" data-i18n="styleTomAndJerry">猫和老鼠风格</option>
-                    <option value="nezha" data-i18n="styleNezha">哪吒风格</option>
-                    <option value="langlangshan" data-i18n="styleLanglangshan">浪浪山小妖怪风格</option>
-                </select>
-            </div>
-            <div class="flex-row">
-                <label style="white-space: nowrap;" data-i18n="comicLanguageLabel">漫画语言:</label>
-                <select id="comic-language" style="flex: 1;">
-                    <option value="en" data-i18n="langEn">English</option>
-                    <option value="zh" data-i18n="langZh">中文</option>
-                    <option value="ja" data-i18n="langJa">日本語</option>
-                </select>
-            </div>
-            <div id="ai-status"></div>
-        </div>
-
-        <!-- ComicBrain Storyboard Import -->
-        <div class="comicbrain-section">
-            <div class="comicbrain-heading">
-                <div>
-                    <div class="comicbrain-title" data-i18n="comicBrainTitle">ComicBrain 分镜</div>
-                    <div class="comicbrain-subtitle" data-i18n="comicBrainSubtitle">载入后可直接编辑，修改会保存为 review 草稿</div>
-                </div>
-                <button onclick="refreshComicBrainProjects()" class="comicbrain-icon-btn" id="comicbrain-refresh-btn"
-                    data-i18n-title="comicBrainRefresh" title="刷新项目" aria-label="刷新 ComicBrain 项目">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M20 11A8 8 0 1 0 18.4 15.8" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" />
-                        <path d="M20 5V11H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </svg>
-                </button>
-            </div>
-            <div class="comicbrain-controls">
-                <select id="comicbrain-project-select" class="comicbrain-project-select">
-                    <option value="" data-i18n="comicBrainLoading">正在读取项目…</option>
-                </select>
-                <button onclick="loadComicBrainProject()" id="comicbrain-load-btn" class="comicbrain-load-btn"
-                    data-i18n="comicBrainLoad" disabled>载入分镜</button>
-            </div>
-            <div id="comicbrain-status" class="comicbrain-status" role="status" aria-live="polite"></div>
-        </div>
-
-        <!-- Session Management Section -->
-        <div class="session-section">
-            <div class="session-header">
-                <select id="session-selector" class="session-selector-large" onchange="switchToSession(this.value)">
-                    <!-- Sessions will be populated by JavaScript -->
-                </select>
-                <div class="session-actions-row">
-                    <button onclick="createNewSession()" class="session-action-icon-btn" title="New Session">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                        </svg>
-                    </button>
-                    <button onclick="toggleSessionManager()" class="session-action-icon-btn" title="Manage Sessions">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
-                            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
-                            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
-                            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <h3 style="display: none;">分镜脚本 (JSON)
-            <span id="page-indicator"></span>
-        </h3>
-
-        <div id="error-msg" class="error" style="display: none;" data-i18n="errorJsonFormat">JSON 格式错误</div>
-
-        <textarea id="json-input" style="display: none;"></textarea>
+      </aside>
+      <div class="workspace">
+        <header class="topbar">
+          <div id="breadcrumb">我的空间 <span>/</span> 创作工作台</div>
+          <div class="topbar-actions">
+            <button class="button" data-assistant="context" aria-controls="creative-assistant-panel" aria-expanded="false">创作助手</button>
+            <button class="preview-badge" id="design-notes">使用说明</button>
+          </div>
+        </header>
+        <main id="content" tabindex="-1"></main>
+        <footer class="page-footer">
+          <span>草稿与图像版本独立保存</span>
+        </footer>
+      </div>
     </div>
+    <dialog id="notes-dialog" aria-labelledby="notes-title">
+      <div class="dialog-heading">
+        <h2 id="notes-title">从想法到漫画，随时可以调整</h2>
+        <button class="quiet-button" id="close-notes" aria-label="关闭使用说明">
+          关闭 ×
+        </button>
+      </div>
+      <p>从「我的系列」设计下一话，或从工作台新建单篇。先确认剧情，再调整分镜，最后生成漫画。</p>
+      <div class="note-block">
+        <h3>想改哪里，就在那里告诉创作助手</h3>
+        <p>顶部的「创作助手」随时可用。剧情、每页分镜、封面、人物资料与创作原则也有直接入口。选择「先讨论」可以来回推敲；选择「提出具体修改」，审阅修改前后再采用。草稿修改可以撤销。</p>
+      </div>
+      <div class="note-block">
+        <h3>只改本话，还是以后都沿用？</h3>
+        <p>修改剧情与分镜只影响本话草稿。修改系列资料会影响该系列后续创作；修改全局创作原则会影响所有系列。助手会显示当前对象和影响范围，可以随时切换。</p>
+      </div>
+      <div class="note-block">
+        <h3>两条创作路径，一个工作空间</h3>
+        <p>
+          系列：浏览原则与系列设定 → 设计连续剧情 → 人工修改章节 →
+          生成分镜与漫画。<br />单篇：输入想法 → 生成分镜 → 人工调整 →
+          生成漫画。
+        </p>
+      </div>
+      <div class="note-block">
+        <h3>少确认，但不模糊创作边界</h3>
+        <p>
+          编辑自动保留为草稿，不弹保存确认。点击“保存本话到系列”后，检查剧情连续性并直接收录最终分镜，更新后续续写使用的创作记忆。同时生成或更新复盘，并分析人工修改是否需要影响后续创作要求。一次局部修改不会直接变成所有系列的通用原则。
+        </p>
+      </div>
+      <div class="note-block">
+        <h3>作品与故事各有自己的版本</h3>
+        <p>
+          已生成漫画留在历史版本中。修改剧情只把当前作品标记为“待重新生成”，不覆盖旧漫画；模型参数、导出与局部重绘放在需要时展开的位置。
+        </p>
+      </div>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <!-- Right Preview Container -->
-    <div class="preview-container">
-        <!-- Empty State -->
-        <div id="empty-state" class="empty-state">
-            <div class="empty-state-icon">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
-                    <rect x="6" y="6" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
-                    <rect x="13" y="6" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
-                    <rect x="6" y="13" width="12" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
-                </svg>
-            </div>
-            <h3 class="empty-state-title" data-i18n="emptyStateTitle">开始创作你的漫画</h3>
-            <p class="empty-state-desc" data-i18n="emptyStateDesc">在下方输入你的故事描述，AI 将为你生成精美的漫画分镜</p>
-            <div class="empty-state-steps">
-                <div class="step-item">
-                    <span class="step-num">1</span>
-                    <span class="step-text" data-i18n="emptyStep1">输入故事描述</span>
-                </div>
-                <div class="step-arrow">→</div>
-                <div class="step-item">
-                    <span class="step-num">2</span>
-                    <span class="step-text" data-i18n="emptyStep2">AI 生成分镜</span>
-                </div>
-                <div class="step-arrow">→</div>
-                <div class="step-item">
-                    <span class="step-num">3</span>
-                    <span class="step-text" data-i18n="emptyStep3">渲染精美图像</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="edit-hint" data-i18n="editHint" style="display: none;">点击任意面板可直接编辑内容</div>
-
-        <div id="comic-page" style="display: none;">
-            <!-- Content will be inserted here by JavaScript -->
-        </div>
-
-        <!-- Page Navigation -->
-        <div id="page-nav" class="page-nav">
-            <button onclick="prevPage()" id="prev-btn" class="nav-btn" title="Previous Page">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round" />
-                </svg>
-            </button>
-            <button onclick="nextPage()" id="next-btn" class="nav-btn" title="Next Page">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round" />
-                </svg>
-            </button>
-        </div>
-    </div>
-
-    <!-- Session Management Modal -->
-    <div id="session-modal" class="modal" style="display: none;">
-        <div class="modal-content session-modal-content">
-            <div class="modal-header">
-                <h3 data-i18n="sessionTitle">Session Management</h3>
-                <button onclick="toggleSessionManager()" class="modal-close-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="session-list" class="session-list">
-                    <!-- Sessions will be populated by JavaScript -->
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Prompt Input Section - Fixed at Bottom -->
-    <div class="prompt-section-fixed">
-        <div id="image-preview-container" class="image-preview-container" style="display: none;">
-            <div class="reference-preview-card">
-                <span class="reference-preview-label" data-i18n="referenceImageLabel">参考图</span>
-                <div class="image-preview-wrapper">
-                    <img id="reference-image-preview" src="" alt="Reference Preview">
-                    <button onclick="removeReferenceImage()" class="remove-image-btn">&times;</button>
-                </div>
-            </div>
-        </div>
-        <div class="prompt-wrapper">
-            <input type="file" id="reference-image-input" accept="image/*" style="display: none;">
-            <!-- Primary input row -->
-            <div class="prompt-input-row">
-                <button onclick="triggerReferenceImageUpload()" class="reference-upload-btn" id="reference-upload-btn"
-                    data-i18n-title="uploadReferenceImageTitle" data-i18n-aria-label="uploadReferenceImageTitle"
-                    title="上传参考图" aria-label="上传参考图">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" stroke-width="2" />
-                        <circle cx="8.5" cy="9.5" r="1.5" fill="currentColor" />
-                        <path d="M21 15L17 11L11 17L8.5 14.5L3 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        <path d="M17 4V2M17 2H15M17 2H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                    </svg>
-                </button>
-                <textarea id="prompt-input" data-i18n="promptPlaceholder"
-                    placeholder="描述故事，也可粘贴或上传参考图"></textarea>
-                <button onclick="optimizePrompt()" class="optimize-btn" id="optimize-btn" data-i18n-title="optimizePromptTitle" title="优化提示词">
-                    <!-- Magic Wand with Sparkles -->
-                    <svg class="wand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <!-- Wand body -->
-                        <path class="wand-body" d="M3 21L15 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <!-- Sparkle 1 (large) -->
-                        <path class="sparkle sparkle-1" d="M19 5L19 2M19 5L19 8M19 5L16 5M19 5L22 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                        <!-- Sparkle 2 (medium) -->
-                        <path class="sparkle sparkle-2" d="M14 3L14 1M14 3L14 5M14 3L12 3M14 3L16 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                        <!-- Sparkle 3 (small) -->
-                        <circle class="sparkle sparkle-3" cx="10" cy="6" r="1" fill="currentColor"/>
-                    </svg>
-                    <!-- Orbiting stars for loading state -->
-                    <div class="magic-loader">
-                        <span class="orbit-star star-1"></span>
-                        <span class="orbit-star star-2"></span>
-                        <span class="orbit-star star-3"></span>
-                    </div>
-                </button>
-                <button onclick="generateWithAI()" class="run-btn" id="run-btn" title="Run">
-                    <span class="btn-text">Run</span>
-                    <span class="shortcut-hint">⌘↵</span>
-                </button>
-            </div>
-
-            <!-- Secondary actions row -->
-            <div class="prompt-actions-row" id="prompt-actions-row">
-                <div id="reference-image-status" class="reference-image-status" style="display: none;">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" stroke-width="2" />
-                        <path d="M21 15L17 11L11 17L8.5 14.5L3 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                    <span data-i18n="referenceImageAttached">1 张参考图</span>
-                </div>
-                <!-- Render Current Page Button -->
-                <button onclick="generateFinalImage()" class="render-btn" id="render-current-btn" style="display: none;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2" />
-                        <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-                        <path d="M21 15L16 10L5 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </svg>
-                    <span data-i18n="renderThisPage">渲染本页</span>
-                </button>
-                <!-- Toggle View Button -->
-                <button onclick="toggleView()" class="toggle-view-btn" id="toggle-view-btn" style="display: none;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M15 2L12 5L15 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                        <path d="M9 22L12 19L9 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                        <path d="M12 5C7.03 5 3 9.03 3 14C3 15.58 3.41 17.06 4.12 18.34" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        <path d="M12 19C16.97 19 21 14.97 21 10C21 8.42 20.59 6.94 19.88 5.66" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                    <span data-i18n="toggleView">翻转预览</span>
-                </button>
-                <!-- Generate All Pages Button -->
-                <button onclick="generateAllPagesImages()" class="generate-all-btn" id="generate-all-btn"
-                    style="display: none;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path
-                            d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                            fill="none" />
-                    </svg>
-                    <span data-i18n="generateAllText">生成全部</span>
-                </button>
-                <!-- Resume Interrupted Image Generation Button -->
-                <button onclick="resumeAllPagesImages()" class="resume-generation-btn" id="resume-generation-btn"
-                    style="display: none;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M8 5V19L19 12L8 5Z" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
-                    </svg>
-                    <span id="resume-generation-text" data-i18n="resumeGenerationText">继续生成</span>
-                </button>
-                <!-- Generate Cover Button -->
-                <button onclick="generateCover()" class="generate-cover-btn" id="generate-cover-btn" style="display: none;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2" />
-                        <path d="M12 8L12 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                        <path d="M8 12L16 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                    </svg>
-                    <span data-i18n="btnGenerateCover">生成封面</span>
-                </button>
-            </div>
-
-            <!-- Cover Customization Floating Panel -->
-            <div id="cover-custom-panel" class="cover-custom-panel" style="display: none;">
-                <div class="cover-custom-header">
-                    <span data-i18n="coverCustomTitle">自定义封面要求</span>
-                    <span class="cover-custom-optional" data-i18n="coverCustomOptional">（可选）</span>
-                </div>
-                <textarea
-                    id="cover-custom-input"
-                    class="cover-custom-input"
-                    data-i18n-placeholder="coverCustomPlaceholder"
-                    placeholder="例如：使用对比色和大字报风格。左边是哭泣的打工人，右边是喝咖啡的闪电，中间大字'贫富差距？'"
-                    rows="4"
-                ></textarea>
-                <div class="cover-custom-actions">
-                    <button class="cover-custom-btn cancel" onclick="hideCoverCustomPanel()">
-                        <span data-i18n="btnCancel">取消</span>
-                    </button>
-                    <button class="cover-custom-btn generate" onclick="generateCoverWithCustom()">
-                        <span data-i18n="coverCustomGenerate">直接生成</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- External Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-
-    <!-- Application Modules -->
-    <script src="frontend/js/i18n.js?v=15"></script>
-    <script src="frontend/js/theme.js?v=4"></script>
-    <script src="frontend/js/config.js?v=6"></script>
-    <script src="frontend/js/api.js?v=10"></script>
-    <script src="frontend/js/renderer.js?v=5"></script>
-    <script src="frontend/js/pageManager.js?v=4"></script>
-    <script src="frontend/js/exporter.js?v=4"></script>
-    <script src="frontend/js/sessionManager.js?v=3"></script>
-    <script src="frontend/js/storyboardImageReconciler.js?v=3"></script>
-    <script src="frontend/js/app.js?v=29"></script>
-</body>
-
+    <script src="/runtime-config.js"></script>
+    <script src="frontend/js/desktopConsent.js"></script>
+    <script src="frontend/js/config.js"></script>
+    <script src="frontend/js/commandContract.js"></script>
+    <script src="frontend/js/appCommands.js"></script>
+    <script src="frontend/js/api.js"></script>
+    <script src="frontend/js/storyboardImageReconciler.js"></script>
+    <script src="frontend/js/consoleStore.js"></script>
+    <script src="frontend/js/consoleViews.js?v=d7b100ae91"></script>
+    <script src="frontend/js/drawingPlayback.js"></script>
+    <script src="frontend/js/creativeAssistant.js"></script>
+    <script src="frontend/js/workspaceUI.js"></script>
+    <script src="frontend/js/app.js?v=a23bc80d10"></script>
+  </body>
 </html>

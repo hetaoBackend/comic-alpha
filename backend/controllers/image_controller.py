@@ -37,6 +37,16 @@ def _comicbrain_image_size(project, fallback):
 
 def _load_comicbrain_image_context(data, selection=None, use_cover_selection=False):
     """Resolve server-owned ComicBrain data without accepting browser paths."""
+    draft_id = data.get("console_draft_id")
+    if draft_id is not None:
+        if not is_trusted_local_request():
+            return None, None, (jsonify(error="ComicBrain 草稿仅允许本机访问"), 403)
+        try:
+            from services.console_service import ConsoleService
+            references, project = ConsoleService.image_context(draft_id, selection)
+            return references, project, None
+        except (ComicBrainValidationError, ComicBrainNotFoundError, ComicBrainPackageError) as error:
+            return None, None, (jsonify(error=str(error)), 400)
     source = data.get("comicbrain_source")
     if source is None:
         return None, None, None
@@ -80,12 +90,12 @@ def _load_comicbrain_image_context(data, selection=None, use_cover_selection=Fal
                 ),
                 "custom_requirements": data.get("custom_requirements"),
             }
+        from services.series_character_service import SeriesCharacterService
         references = ComicBrainProjectService.resolve_character_references(
-            series_id,
-            chapter_id,
-            selection=selection,
-            project=project,
-        )
+            series_id, chapter_id, selection=selection, project=project)
+        configured = SeriesCharacterService.get(series_id)
+        if configured['characters'] or configured['revision'] > 1:
+            references = SeriesCharacterService.references(series_id, selection)
         return references, project, None
     except ComicBrainConflictError as error:
         return None, None, (jsonify({"error": str(error)}), 409)

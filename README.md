@@ -521,3 +521,8 @@ MIT License
 ## Contributing
 
 Issues and Pull Requests are welcome!
+## macOS desktop support
+
+Web and macOS share the same frontend and backend. Keep using `./start.sh` for Web. For the desktop app, run `npm install`, `npm run desktop:prepare`, then `npm run desktop`. Build installers with `npm run desktop:dist`.
+
+The packaged app includes its local service and keeps writable data outside the application bundle. See [desktop runtime and packaging guide](desktop/README.md).

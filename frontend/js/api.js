@@ -2,7 +2,8 @@
  * API Module - Handles all backend API calls
  */
 
-const API_BASE_URL = 'http://localhost:5003/api';
+// Injected by the supported frontend server; desktop uses its private in-process protocol.
+const API_BASE_URL = window.COMIC_RUNTIME?.apiBaseUrl || 'http://localhost:5003/api';
 
 class ComicAPI {
     /**
@@ -128,6 +129,7 @@ class ComicAPI {
                     rows_per_page: rowsPerPage,
                     language: language,
                     comicbrain_source: comicBrainSource,
+                    console_draft_id: imageConfig.consoleDraftId || null,
                     comicbrain_render: comicBrainRender
                 })
             });
@@ -225,7 +227,8 @@ class ComicAPI {
                     reference_imgs: referenceImages,
                     language: language,
                     custom_requirements: customRequirements,
-                    comicbrain_source: comicBrainSource
+                    comicbrain_source: comicBrainSource,
+                    console_draft_id: imageConfig.consoleDraftId || null
                 })
             });
 

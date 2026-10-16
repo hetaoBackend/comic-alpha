@@ -521,3 +521,8 @@ MIT License
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request！
+## macOS 桌面版
+
+现已支持 Web 与 macOS 共用一套界面和业务逻辑。Web 继续使用 `./start.sh`；Mac 开发运行：`npm install`、`npm run desktop:prepare`、`npm run desktop`。打包：`npm run desktop:dist`。
+
+安装版内置本地服务，工作数据保存在用户目录，详细说明见 [macOS 与 Web 运行指南](desktop/README.md)。

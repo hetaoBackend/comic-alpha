@@ -145,6 +145,7 @@ class ComicService:
         """
         # Define style descriptions
         style_descriptions = {
+            "reference": "严格跟随系列已确认的人物视觉锚点、服装、体型、构图与参考资产；不引入其他作品角色或改变系列画风",
             "doraemon": "哆啦A梦风格：圆润可爱的角色设计，简洁明快的线条，温馨幽默的氛围",
             "american": "美式漫画风格：夸张的肌肉线条，英雄主义，强烈的明暗对比",
             "watercolor": "水彩风格：柔和的色彩过渡，艺术感的笔触，梦幻氛围",

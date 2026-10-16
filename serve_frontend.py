@@ -4,21 +4,24 @@
 from __future__ import annotations
 
 import os
+import json
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import unquote, urlsplit
+from backend.runtime_paths import resource_root, image_directory, workspace_id
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parent
+REPOSITORY_ROOT = resource_root()
+GENERATED_IMAGE_ROOT = image_directory()
 PUBLIC_INDEX = (REPOSITORY_ROOT / "index.html").resolve()
 PUBLIC_DIRECTORIES = tuple(
     path.resolve()
     for path in (
         REPOSITORY_ROOT / "frontend",
         REPOSITORY_ROOT / "assets",
-        REPOSITORY_ROOT / "backend" / "static" / "images",
+        GENERATED_IMAGE_ROOT,
     )
 )
 
@@ -36,6 +39,13 @@ def resolve_public_file(request_target: str) -> Optional[Path]:
     request_path = unquote(urlsplit(request_target).path)
     if "\x00" in request_path:
         return None
+    for prefix in ('/backend/static/images/', '/static/images/'):
+        if request_path.startswith(prefix):
+            filename = request_path[len(prefix):]
+            candidate = (GENERATED_IMAGE_ROOT / filename).resolve()
+            if filename and Path(filename).name == filename and candidate.parent == GENERATED_IMAGE_ROOT and candidate.is_file():
+                return candidate
+            return None
     if request_path in {"", "/"}:
         candidate = PUBLIC_INDEX
     else:
@@ -54,41 +64,53 @@ def resolve_public_file(request_target: str) -> Optional[Path]:
 class PublicOnlyRequestHandler(SimpleHTTPRequestHandler):
     """Static handler that cannot traverse into ComicBrain or repository files."""
 
-    def _serve_public_file(self, head_only: bool) -> None:
+    def send_head(self):
+        if urlsplit(self.path).path == '/runtime-config.js':
+            from io import BytesIO
+            api_url = getattr(self.server, 'api_base_url', None) or os.environ.get('COMIC_API_BASE_URL', 'http://localhost:5003/api')
+            body = ('window.COMIC_RUNTIME = Object.freeze(' + json.dumps({'apiBaseUrl': api_url, 'workspaceId': workspace_id()}).replace('<', '\\u003c') + ');').encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/javascript; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            return BytesIO(body)
         public_file = resolve_public_file(self.path)
         if public_file is None:
             self.send_error(404, "Not found")
             return
 
-        original_path = self.path
-        relative_path = public_file.relative_to(REPOSITORY_ROOT).as_posix()
-        self.path = "/" + quote(relative_path, safe="/")
         try:
-            if head_only:
-                super().do_HEAD()
-            else:
-                super().do_GET()
-        finally:
-            self.path = original_path
-
-    def do_GET(self) -> None:
-        self._serve_public_file(head_only=False)
-
-    def do_HEAD(self) -> None:
-        self._serve_public_file(head_only=True)
+            handle = public_file.open('rb')
+        except OSError:
+            self.send_error(404, 'Not found')
+            return None
+        self.send_response(200)
+        self.send_header('Content-Type', self.guess_type(str(public_file)))
+        self.send_header('Content-Length', str(os.fstat(handle.fileno()).st_size))
+        self.send_header('Last-Modified', self.date_time_string(os.fstat(handle.fileno()).st_mtime))
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        return handle
 
     def list_directory(self, path: str):
         self.send_error(404, "Not found")
         return None
 
 
-def main() -> None:
-    port = int(os.environ.get("FRONTEND_PORT", "8000"))
+def create_server(port: int = 8000, api_base_url: Optional[str] = None):
     handler = partial(
         PublicOnlyRequestHandler,
         directory=str(REPOSITORY_ROOT),
     )
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    server.api_base_url = api_base_url
+    return server
+
+
+def main() -> None:
+    port = int(os.environ.get("FRONTEND_PORT", "8000"))
+    server = create_server(port)
     print(f"Frontend available at http://127.0.0.1:{port}")
     try:
         server.serve_forever()

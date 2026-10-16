@@ -1,0 +1,39 @@
+{
+  "name": "comicperfect",
+  "version": "0.1.1",
+  "private": true,
+  "description": "ComicPerfect comic creation workspace for Web and macOS",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "desktop": "electron .",
+    "desktop:prepare": "uv sync --project backend --group desktop",
+    "desktop:backend": "uv run --project backend --group desktop python desktop/build_backend.py",
+    "desktop:pack": "npm run desktop:backend && node desktop/build_app.cjs pack",
+    "desktop:dist": "npm run desktop:backend && node desktop/build_app.cjs dist",
+    "appstore:check": "node desktop/build_store.cjs",
+    "appstore:dev": "node desktop/build_store.cjs --build",
+    "appstore:release": "node desktop/build_store.cjs --build --release",
+    "test:frontend": "node --test frontend/tests/*.test.js desktop/tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.comicperfect.desktop",
+    "productName": "ComicPerfect",
+    "files": ["desktop/*.cjs", "!desktop/build_app.cjs", "!desktop/build_store.cjs", "desktop/loading.html", "frontend/js/commandContract.js", "package.json"],
+    "extraResources": [{"from": "build/comicperfect-server", "to": "server"}],
+    "directories": {"output": "dist"},
+    "mac": {
+      "icon": "desktop/icons/comicperfect.icns",
+      "identity": "-",
+      "entitlements": "desktop/entitlements.mac.plist",
+      "entitlementsInherit": "desktop/entitlements.mac.plist",
+      "category": "public.app-category.graphics-design",
+      "target": ["dmg", "zip"],
+      "hardenedRuntime": true
+    },
+    "dmg": {"title": "ComicPerfect ${version}"}
+  }
+}
