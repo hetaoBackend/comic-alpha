@@ -22,6 +22,9 @@ class ConsoleStore {
     try {
       this.dirty = new Set(JSON.parse(localStorage.getItem(`${this.key}:pending`) || '[]'));
     } catch { this.dirty = new Set(); }
+    try { this.deletions = JSON.parse(localStorage.getItem(`${this.key}:deletions`) || '{}'); }
+    catch { this.deletions = {}; }
+    this.applyDeletions(this.deletions);
     this.migrate();
   }
   read() {
@@ -61,6 +64,7 @@ class ConsoleStore {
     }
     for (const s of Object.values(old || {})) {
       if (!s || typeof s !== "object") continue;
+      if (this.isDeleted({id:s.id, seriesId:s.comicBrainProject?.seriesId, source:s.comicBrainProject})) continue;
       if (this.drafts[s.id] || (!s.comicData && !s.prompt)) continue;
       const d = this.create(
         s.comicBrainProject ? "series" : "single",
@@ -118,6 +122,7 @@ class ConsoleStore {
       title: "",
       idea: "",
       inspirationReference: "",
+      seriesReference: { work: "", mode: "plot", brief: "" },
       step: 0,
       pageCount: 3,
       chapterCount: 1,
@@ -140,6 +145,7 @@ class ConsoleStore {
     try {
       localStorage.setItem(this.key, JSON.stringify(this.drafts));
       localStorage.setItem(`${this.key}:pending`, JSON.stringify([...this.dirty]));
+      localStorage.setItem(`${this.key}:deletions`, JSON.stringify(this.deletions || {}));
       return true;
     } catch {
       window.dispatchEvent(
@@ -152,6 +158,7 @@ class ConsoleStore {
   }
   merge(remote, persist = true) {
     for (const d of remote) {
+      if (this.isDeleted(d)) continue;
       this.normalize(d);
       const local = this.drafts[d.id];
       if (
@@ -163,6 +170,7 @@ class ConsoleStore {
     if (persist) this.local();
   }
   save(d) {
+    if (this.isDeleted(d)) throw new Error("这份内容已被永久删除，请刷新页面。");
     d.updatedAt = new Date().toISOString();
     this.drafts[d.id] = d;
     this.dirty.add(d.id);
@@ -231,6 +239,37 @@ class ConsoleStore {
     return Object.values(this.drafts).sort((a, b) =>
       b.updatedAt.localeCompare(a.updatedAt),
     );
+  }
+  isDeleted(d) {
+    const state = this.deletions || {};
+    if (state.draftIds?.includes(d.id) || state.seriesIds?.includes(d.seriesId)) return true;
+    const ids = [d.source?.chapterId, ...Object.values(d.canonChapters || {}).map(c => c.chapterId)];
+    return state.chapters?.some(c => c.seriesId === d.seriesId && ids.includes(c.chapterId)) || false;
+  }
+  applyDeletions(state = {}) {
+    this.deletions = state;
+    for (const [id, draft] of Object.entries(this.drafts)) {
+      if (!this.isDeleted(draft)) continue;
+      clearTimeout(this.timers.get(id));
+      this.timers.delete(id);
+      this.dirty.delete(id);
+      delete this.drafts[id];
+    }
+    if (this.legacyAllowed) {
+      try {
+        const legacy = JSON.parse(localStorage.getItem('comic_sessions') || '{}');
+        for (const [id, s] of Object.entries(legacy)) {
+          if (this.isDeleted({id, seriesId:s.comicBrainProject?.seriesId, source:s.comicBrainProject})) delete legacy[id];
+        }
+        localStorage.setItem('comic_sessions', JSON.stringify(legacy));
+        if (this.key !== 'comicperfect_console_v1') {
+          const prior = JSON.parse(localStorage.getItem('comicperfect_console_v1') || '{}');
+          for (const [id, d] of Object.entries(prior)) if (this.isDeleted(d)) delete prior[id];
+          localStorage.setItem('comicperfect_console_v1', JSON.stringify(prior));
+        }
+      } catch {}
+    }
+    this.local();
   }
 }
 class ConsoleAPI {

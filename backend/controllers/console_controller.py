@@ -1,4 +1,6 @@
 """Local-only creation console API."""
+import logging
+
 from flask import Blueprint, request, jsonify
 from controllers.auth_utils import is_trusted_local_request, validate_model_provider, validate_reasoning_effort
 from controllers.comicbrain_controller import _error_response
@@ -6,12 +8,49 @@ from services.console_service import ConsoleService
 from services.comicbrain_project_service import ComicBrainValidationError
 
 console_bp = Blueprint('console', __name__)
+logger = logging.getLogger(__name__)
+
+
+def assistant_error_response(error):
+    response, status = _error_response(error)
+    # Desktop requests bypass the HTTP access log. Record diagnostics without
+    # writing draft text, prompts, credentials or provider response bodies.
+    logger.warning('Creative assistant request failed: operation=%s status=%d error=%s code=%s',
+                   request.endpoint, status, type(error).__name__, response.get_json().get('code', '-'))
+    return response, status
 
 def body_object():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         raise ComicBrainValidationError('请求需要一个有效的 JSON 对象')
     return data
+
+
+@console_bp.post('/api/console/delete/prepare')
+def prepare_deletion():
+    try:
+        from services.deletion_service import DeletionService
+        data = body_object()
+        if isinstance(data.get('target'), dict) and data['target'].get('kind') == 'chapter':
+            error, status = validate_model_provider(data.get('text_provider', 'codex'), data.get('api_key'), data.get('google_api_key'))
+            if error:
+                return jsonify(error=error), status
+            effort, error, status = validate_reasoning_effort(data.get('reasoning_effort'))
+            if error:
+                return jsonify(error=error), status
+            data['reasoning_effort'] = effort
+        return jsonify(DeletionService.prepare(data))
+    except Exception as error:
+        return _error_response(error)
+
+
+@console_bp.post('/api/console/delete/commit')
+def commit_deletion():
+    try:
+        from services.deletion_service import DeletionService
+        return jsonify(DeletionService.commit(body_object()))
+    except Exception as error:
+        return _error_response(error)
 
 @console_bp.before_request
 def local_only():
@@ -49,6 +88,23 @@ def plan():
         return _error_response(error)
 
 
+@console_bp.post('/api/console/reference/search')
+def search_reference_scenes():
+    try:
+        from services.reference_scene_service import ReferenceSceneService
+        data = body_object()
+        error, status = validate_model_provider(data.get('text_provider', 'codex'), data.get('api_key'), data.get('google_api_key'))
+        if error:
+            return jsonify(error=error), status
+        effort, error, status = validate_reasoning_effort(data.get('reasoning_effort'))
+        if error:
+            return jsonify(error=error), status
+        data['reasoning_effort'] = effort
+        return jsonify(ReferenceSceneService.search(data))
+    except Exception as error:
+        return _error_response(error)
+
+
 @console_bp.post('/api/console/assistant')
 def creative_assistant():
     try:
@@ -63,7 +119,7 @@ def creative_assistant():
         data['reasoning_effort'] = effort
         return jsonify(CreativeAssistantService.reply(data))
     except Exception as error:
-        return _error_response(error)
+        return assistant_error_response(error)
 
 
 @console_bp.post('/api/console/assistant/apply')
@@ -72,7 +128,7 @@ def apply_assistant_change():
         from services.creative_assistant_service import CreativeAssistantService
         return jsonify(CreativeAssistantService.apply(body_object()))
     except Exception as error:
-        return _error_response(error)
+        return assistant_error_response(error)
 
 
 @console_bp.post('/api/console/assistant/undo')
@@ -81,7 +137,7 @@ def undo_assistant_change():
         from services.creative_assistant_service import CreativeAssistantService
         return jsonify(CreativeAssistantService.undo(body_object()))
     except Exception as error:
-        return _error_response(error)
+        return assistant_error_response(error)
 
 @console_bp.post('/api/console/canon/prepare')
 def prepare_canon():
@@ -168,5 +224,14 @@ def series_characters(sid):
         from services.series_character_service import SeriesCharacterService
         value = SeriesCharacterService.save(sid, body_object()) if request.method == 'PUT' else SeriesCharacterService.get(sid)
         return jsonify(value)
+    except Exception as error:
+        return _error_response(error)
+
+
+@console_bp.route('/api/console/series/<sid>/reference', methods=['GET', 'PUT'])
+def series_reference(sid):
+    try:
+        from services.series_reference_service import SeriesReferenceService
+        return jsonify(SeriesReferenceService.save(sid, body_object()) if request.method == 'PUT' else SeriesReferenceService.get(sid))
     except Exception as error:
         return _error_response(error)

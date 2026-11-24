@@ -14,6 +14,8 @@ npm run desktop:prepare
 npm run desktop
 ```
 
+macOS 开发入口会在系统临时目录缓存独立的 `ComicPerfect.app`，设置产品名称、图标并本地签名，因此 Dock 和系统应用名称也显示 ComicPerfect。它仍然直接使用仓库源码与开发后端；不会修改 node_modules 中的 Electron，也不会改动创作空间。直接执行 `electron .` 会继续使用 Electron 的默认应用名称。
+
 Mac 窗口自动启动服务，支持系统编辑菜单、缩放、全屏、原生导出对话框和 Dock 重新打开。窗口位置、大小、缩放与每个创作空间的阅读位置会保留；外接显示器断开时会将窗口移回可见区域。关闭、重新载入或切换空间前，会等待草稿和分镜同步。生成仍在进行或保存失败时会说明影响，并提供继续创作的选项。Command+Q 同时退出服务；关闭窗口后遵循 macOS 惯例保留应用。
 
 Web 默认使用 8000/5003。Mac 客户端使用 `comicperfect://app` 内部界面协议与父子进程 stdin/stdout 管道，不创建 TCP 监听端口；Web 与客户端可独立运行。Mac 只允许一个应用实例。升级后界面来源改变，旧来源中的模型偏好需要重新设置；已保存到创作空间的作品、图像和加密凭据保留。
@@ -35,11 +37,12 @@ Mac App Store 使用独立的 `appstore:check`、`appstore:dev` 和 `appstore:re
 
 ## 数据与现有创作空间
 
-- 开发模式复用仓库中的创作空间及 `backend/static/images`，与本机 Web 端共享服务端草稿；浏览器与桌面窗口的 localStorage（API 设置等）分别保存。
-- 安装版数据位于 `~/Library/Application Support/ComicPerfect/workspace/`，包含 `ComicBrain/` 和 `images/`。应用更新不覆盖这些数据。
-- 新安装仅带可复用工作空间骨架；安装包不会包含作者的 Wiki、production 章节、草稿、凭据或历史生成图片。
-- 菜单“创作空间 → 选择已有创作空间…”可关联现有完整创作空间并重启。自动查找相邻的 `backend/static/images` 或 `images`；非标准布局可用“选择图片文件夹…”为当前空间指定图片目录。按空间记录该目录，不移动或删除图片。草稿缓存按空间标识隔离；旧缓存仅迁入首次关联的空间，不会在切换后混入另一空间。
-- `COMICBRAIN_ROOT`、`COMIC_IMAGE_DIR` 可覆盖路径，环境变量优先于菜单设置；Finder 启动时通常不会继承终端环境变量。
+- 创作空间是用户选择的独立文件夹，不属于安装包或应用数据目录。首次启动选择“新建创作空间”并输入名称和保存位置，或打开已有文件夹；之后自动打开上次使用的空间。开发版与安装版遵循相同规则。
+- 文件夹里的 `comicperfect.workspace.json` 保存固定标识与相对图片目录；`wiki/` 保存系列、原则和偏好，`production/` 保存分镜和草稿，`images/` 保存生成图片，`.agents/skills/` 保存创作操作规则。新空间为空白骨架，不复制作者内容。
+- App 的 `~/Library/Application Support/ComicPerfect/workspace.json` 只记录最近打开的位置、窗口和访问授权等应用偏好。Web 服务默认读取同一个位置指针，`COMIC_WORKSPACE_CONFIG` 可指定另一份指针文件。
+- 可以备份或移动整个工作区文件夹，然后通过“打开已有空间”重新关联。固定空间标识使路径变化不影响草稿缓存；不同新空间使用不同标识，不会混入另一空间的作品。文件夹缺失时要求重新选择，不自动创建空白副本。
+- 旧空间仍支持相邻图片目录，且可用“选择图片文件夹…”指定目录。`COMICBRAIN_ROOT`、`COMIC_IMAGE_DIR` 覆盖自动配置；Finder 启动时通常不会继承终端环境变量。
+- 旧布局迁移工具 `desktop/migrate_workspace.py --source ... --destination ... --images ... --settings ...` 会逐文件校验资料与图片，保留缓存标识和阅读位置，最后才更新默认位置；原数据保留为恢复副本。迁移前请退出应用和 Web 服务，避免迁移时发生写入。
 - Codex 路径继续读取本机 `~/.codex/auth.json`（或 `CODEX_AUTH_FILE`），不会将凭据打进安装包。首次使用前需在本机完成 Codex 登录；OpenAI/Gemini 仍在创作设置中配置。
 
 ## 共享运行机制

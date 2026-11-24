@@ -255,8 +255,11 @@ Do not wrap the JSON in markdown fences or add explanatory text."""
                 comic_data = [elem.model_dump() for elem in comic_script_data.pages]
                 return self._normalize_generated_pages(comic_data, rows_per_page)
             elif self.api_key:
-                llm = ChatOpenAI(model=self.model, openai_api_key=self.api_key, base_url=self.base_url, temperature=0.7, max_tokens=3000)
-                structured_llm = llm.with_structured_output(ComicScript)
+                llm = ChatOpenAI(model=self.model, openai_api_key=self.api_key, base_url=self.base_url, temperature=0.7, max_tokens=3000, timeout=120, max_retries=0)
+                # Compatible providers may support JSON objects but not OpenAI's
+                # native json_schema format. Pydantic still validates the result.
+                system_prompt += "\nReturn only JSON matching this schema: " + json.dumps(ComicScript.model_json_schema(), ensure_ascii=False)
+                structured_llm = llm.with_structured_output(ComicScript, method="json_mode")
                 response: ComicScript = structured_llm.invoke(
                     input=[
                         SystemMessage(content=system_prompt),
@@ -298,7 +301,7 @@ Do not wrap the JSON in markdown fences or add explanatory text."""
                 return self._normalize_generated_pages(comic_data, rows_per_page)
             
         except Exception as e:
-            raise Exception(f"AI generation failed: {str(e)}")
+            raise
 
 
 def validate_script(script) -> tuple[bool, str]:

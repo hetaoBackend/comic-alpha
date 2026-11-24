@@ -27,8 +27,13 @@ def _error_response(error: Exception):
         return jsonify({"error": str(error)}), 404
     if isinstance(error, ComicBrainPackageError):
         return jsonify({"error": str(error)}), 422
+    from provider_errors import provider_error_response
+    provider_failure = provider_error_response(error)
+    if provider_failure:
+        payload, status = provider_failure
+        return jsonify(payload), status
     logger.exception("Unexpected ComicBrain bridge failure")
-    return jsonify({"error": "ComicBrain bridge failed"}), 500
+    return jsonify({"error": "本机创作处理失败，草稿已保留。请重试；若仍失败，请通过帮助菜单联系支持。", "code": "workspace_failure"}), 500
 
 
 def _reject_nonlocal():

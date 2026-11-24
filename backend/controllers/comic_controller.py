@@ -100,6 +100,11 @@ def generate_comic():
     except json.JSONDecodeError:
         return jsonify({"error": "Invalid JSON format"}), 400
     except Exception as e:
+        from provider_errors import provider_error_response
+        provider_failure = provider_error_response(e)
+        if provider_failure:
+            payload, status = provider_failure
+            return jsonify(payload), status
         return jsonify({"error": str(e)}), 500
 
 

@@ -176,19 +176,20 @@ comic-alpha/
 
 ```bash
 python3 ComicBrain/.agents/skills/comic-wiki/scripts/export_comic_alpha.py \
+  --root "/absolute/path/to/your-workspace" \
   --series-id <series-id> \
   --chapter-id <chapter-id>
 ```
 
 启动 comic-alpha 后，在页面的 **ComicBrain 分镜** 区域选择章节并点击 **载入分镜**。这条路径会跳过二次 AI 分镜生成，直接进入人工调整和生图阶段；每页会保留自己真实的行数，生图和封面也会自动使用 ComicBrain 已确认的人物参考图。
 
-人工修改会立即保存到浏览器，并写入对应章节的 `ComicBrain/production/<series-id>/<chapter-id>/review.json`。`review.json` 始终是制作草稿，不会自动改写 ComicBrain 正史；如果上游脚本、布局或正史参考图变化，完整制作快照哈希也会变化，旧草稿不会覆盖新分镜。页面成图版本也会持久保存到 `renders/manifest.json`。再次点击 **载入分镜** 时——即使更换浏览器——未变化的页面也会恢复原图，变化或新增的页面进入待生成状态，可通过 **继续生成** 单独补齐。
+人工修改会立即保存到浏览器，并写入对应章节的 `<workspace>/production/<series-id>/<chapter-id>/review.json`。`review.json` 始终是制作草稿，不会自动改写 ComicBrain 正史；如果上游脚本、布局或正史参考图变化，完整制作快照哈希也会变化，旧草稿不会覆盖新分镜。页面成图版本也会持久保存到 `renders/manifest.json`。再次点击 **载入分镜** 时——即使更换浏览器——未变化的页面也会恢复原图，变化或新增的页面进入待生成状态，可通过 **继续生成** 单独补齐。
 
-默认工作区为仓库内的 `./ComicBrain`。只有使用外部工作区时才需要通过 `COMICBRAIN_ROOT` 指定绝对路径。
+工作区是用户文件系统中的独立文件夹。桌面 App 首次启动时新建或打开一个文件夹，以后自动打开上次使用的位置；Web 默认读取同一位置配置，也可通过 `COMICBRAIN_ROOT` 指定另一个工作区。资料、草稿和图片随工作区保存，移动整个文件夹后重新打开即可。`comicperfect.workspace.json` 保留固定工作区标识，不因路径改变而丢失草稿缓存。
 
 `ComicBrain/.gitignore` 默认忽略具体剧情、人物、系列素材、用户偏好、原始证据以及章节制作产物；Git 只会看到可复用的 Agent 规则、技能、模板和制作契约。不要使用 `git add -f` 强行加入这些私人知识文件。
 
-在 Obsidian 中请把 `comic-alpha/ComicBrain` 作为 Vault 打开；在 Codex 中建议直接打开 `comic-alpha` 仓库根目录，顶层 Agent 规则会把漫画知识任务路由到内置 ComicBrain。
+在 Obsidian 或 Codex 中打开你选择的工作区文件夹，即可直接访问创作资料和工作区内的 Agent 规则。
 
 ## 使用说明
 

@@ -67,7 +67,12 @@ class AssistantTest(unittest.TestCase):
         draft = Console.get_draft('draft-test')
         draft['title'] = '新标题'
         Console.save_draft(draft['id'], draft, draft['revision'])
-        with self.assertRaises(ComicBrainConflictError): Assistant.apply({'token': reply['proposal']['token']})
+        with self.assertLogs('controllers.console_controller', level='WARNING') as logs:
+            response = self.client.post('/api/console/assistant/apply', headers=self.headers,
+                                        json={'token': reply['proposal']['token']})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('operation=console.apply_assistant_change status=409 error=ComicBrainConflictError', logs.output[0])
+        self.assertNotIn(reply['proposal']['token'], logs.output[0])
         # A new proposal may be adopted; a later edit prevents its undo even if
         # the browser sends the latest revision rather than the old one.
         with patch.object(Console, 'ask', return_value=self.result({'title': '封面', 'description': '主角面对问题。'})):
@@ -93,6 +98,44 @@ class AssistantTest(unittest.TestCase):
         self.assertEqual(saved['images'], self.draft['images'])
         self.assertTrue(saved['storyDirty'])
 
+    def test_unchanged_draft_saves_allow_story_adoption_and_undo(self):
+        self.draft.update(chapterIndex=0, chapters=[{
+            'title': '草稿', 'summary': '旧冲突', 'beats': ['原起', '原承', '原果'],
+        }])
+        draft = self.save()
+        target = {'kind': 'story', 'draft_id': draft['id'], 'chapter_index': 0}
+        story = {'title': '新标题', 'summary': '新冲突', 'beats': ['新开场', '新发展', '新收束'],
+                 'cover': {'title': '新封面', 'description': '新封面画面'}}
+        with patch.object(Console, 'ask', return_value=self.result(story)):
+            reply = self.client.post('/api/console/assistant', headers=self.headers,
+                                     json={'target': target, 'mode': 'revise', 'instruction': '调整剧情'})
+        self.assertEqual(reply.status_code, 200, reply.get_json())
+        token = reply.get_json()['proposal']['token']
+
+        # The editor flushes its local copy before both adoption and undo.
+        def flush(value):
+            response = self.client.put('/api/console/drafts/' + value['id'], headers=self.headers,
+                                       json={'draft': value, 'revision': value['revision']})
+            self.assertEqual(response.status_code, 200, response.get_json())
+            return response.get_json()['draft']
+
+        flushed = flush({**draft, 'updatedAt': '2026-01-01T00:00:00Z'})
+        applied = self.client.post('/api/console/assistant/apply', headers=self.headers, json={'token': token})
+        self.assertEqual(applied.status_code, 200, applied.get_json())
+        self.assertEqual(flushed, draft)
+        saved = applied.get_json()['draft']
+        self.assertNotEqual(saved['revision'], draft['revision'])
+        self.assertEqual(saved['title'], story['title'])
+        self.assertEqual(saved['chapters'][0]['summary'], story['summary'])
+        self.assertEqual(saved['chapters'][0]['beats'], story['beats'])
+        self.assertEqual(saved['coverBrief'], story['cover']['description'])
+
+        flushed = flush(saved)
+        undone = self.client.post('/api/console/assistant/undo', headers=self.headers,
+                                  json={'token': token, 'revision': flushed['revision']})
+        self.assertEqual(undone.status_code, 200, undone.get_json())
+        self.assertEqual(undone.get_json()['draft']['chapters'][0]['beats'], draft['chapters'][0]['beats'])
+
     def test_model_cannot_write_documents_while_editing_a_page_or_skip_rule_review(self):
         self.save()
         for result in [self.result({'page': {}}, [{'documentKey': 'forged', 'body': '# 任意资料'}]),
@@ -100,6 +143,27 @@ class AssistantTest(unittest.TestCase):
             with patch.object(Console, 'ask', return_value=result):
                 with self.assertRaises(ComicBrainValidationError):
                     Assistant.reply({'target': self.page_target(), 'instruction': '改一下', 'mode': 'revise'})
+
+    def test_story_reference_requirement_survives_preview_apply_and_undo(self):
+        fixtures.ConsoleTest.reference_preference(self)
+        story = fixtures.ConsoleTest.reference_plan(self)['chapters'][0]
+        self.draft.update(chapters=[copy.deepcopy(story)], chapterIndex=0)
+        self.save()
+        target = {'kind': 'story', 'draft_id': 'draft-test'}
+        patch_value = {**copy.deepcopy(story), 'summary': '新冲突', 'cover': {'title': '封面', 'description': '新瞬间'}}
+        result = self.result(patch_value)
+        result['ruleApplications'].append({'documentId': '05-系列偏好', 'status': '采用', 'reason': '保持具体来源'})
+        with patch.object(Console, 'ask', return_value=result) as model:
+            reply = Assistant.reply({'target': target, 'instruction': '调整剧情', 'mode': 'revise'})
+        self.assertTrue(json.loads(model.call_args.args[2])['required_inspirations'][0]['specificScene'])
+        saved = Assistant.apply({'token': reply['proposal']['token']})['draft']
+        self.assertEqual(saved['chapters'][0]['inspiration'], story['inspiration'])
+        restored = Assistant.undo({'token': reply['proposal']['token'], 'revision': saved['revision']})['draft']
+        self.assertEqual(restored['chapters'][0]['inspiration'], story['inspiration'])
+        result['patch'].pop('inspiration')
+        with patch.object(Console, 'ask', return_value=result):
+            with self.assertRaises(ComicBrainValidationError):
+                Assistant.reply({'target': target, 'instruction': '调整剧情', 'mode': 'revise'})
 
     def test_document_adoption_validates_then_records_evidence_and_preserves_identity(self):
         self.valid_workspace()

@@ -84,14 +84,12 @@ class ComicBrainBridgeTest(unittest.TestCase):
             os.environ["COMICBRAIN_ROOT"] = self.previous_root
         self.temp_dir.cleanup()
 
-    def test_default_root_is_embedded_in_repository(self):
+    def test_default_root_uses_last_opened_user_folder(self):
         override = os.environ.pop("COMICBRAIN_ROOT", None)
         try:
-            repository_root = Path(BACKEND_DIR).parent
-            self.assertEqual(
-                (repository_root / "ComicBrain").resolve(),
-                ComicBrainProjectService.comicbrain_root(),
-            )
+            from unittest.mock import patch
+            with patch('runtime_paths.workspace_settings', return_value={'root': str(self.comicbrain_root)}):
+                self.assertEqual(self.comicbrain_root.resolve(), ComicBrainProjectService.comicbrain_root())
         finally:
             if override is not None:
                 os.environ["COMICBRAIN_ROOT"] = override

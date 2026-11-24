@@ -104,9 +104,13 @@ Modular JavaScript with classes exposed on `window`:
 - Frontend stores sessions, configs, and generated images in localStorage
 - Backend saves generated images to `backend/static/images/`
 - Local character references live in `assets/refer_image/<style>/`. Filenames are always valid reference names; optional `characters.json` files add aliases, display names, and role hints.
-- The embedded ComicBrain workspace provides compiled storyboards from
-  `ComicBrain/production/<series-id>/<chapter-id>/storyboard.json`. Set
-  `COMICBRAIN_ROOT` only when the workspace is elsewhere.
+- The selected user-owned workspace provides compiled storyboards from
+  `<workspace>/production/<series-id>/<chapter-id>/storyboard.json`. Desktop
+  remembers its location; Web reads the same pointer. `COMICBRAIN_ROOT` overrides
+  that location. `comicperfect.workspace.json` inside the workspace preserves its
+  identity and relative image directory when moved. Repository `ComicBrain/`
+  remains reusable scaffolding and may contain a private recovery copy, not the
+  implicit active workspace.
 - Every ComicBrain chapter script has a sibling `04-封面描述.md`; the exporter
   compiles its short title and visual brief into `storyboard.json.cover` for
   cover generation.

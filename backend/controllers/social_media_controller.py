@@ -58,5 +58,12 @@ def generate_xiaohongshu_content():
         
     except json.JSONDecodeError as e:
         return jsonify({"error": f"JSON parsing failed: {str(e)}"}), 500
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
+        from provider_errors import provider_error_response
+        provider_failure = provider_error_response(e)
+        if provider_failure:
+            payload, status = provider_failure
+            return jsonify(payload), status
         return jsonify({"error": str(e)}), 500

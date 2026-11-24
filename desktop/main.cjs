@@ -12,7 +12,7 @@ const { ScopedAccess } = require('./scoped-access.cjs');
 const { SecretStore, installSecretIPC } = require('./secrets.cjs');
 const { AI_PATHS, recipientFor, signConsent } = require('./ai-consent.cjs');
 const { randomBytes } = require('node:crypto');
-const { selectWorkspace, rememberWorkspace, createWorkspace, workspaceInfo, installWorkspaceIPC } = require('./workspace.cjs');
+const { selectWorkspace, rememberWorkspace, createWorkspace, ensureWorkspaceManifest, workspaceInfo, installWorkspaceIPC } = require('./workspace.cjs');
 app.setName('ComicPerfect');
 protocol.registerSchemesAsPrivileged([{ scheme: 'comicperfect', privileges: {
   standard: true, secure: true, supportFetchAPI: true, corsEnabled: true,
@@ -25,7 +25,7 @@ let state = { busy: false, pending: false, canExport: false };
 
 function openWindow() {
   if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); return; }
-  const window = createWindow({ BrowserWindow, screen, saved: settings.value.window,
+  const window = createWindow({ BrowserWindow, Menu, screen, saved: settings.value.window,
     onPersist: geometry => settings.update({ window: geometry }),
     onClose: event => {
       if (allowClose) return;
@@ -85,14 +85,19 @@ async function finishQuit(relaunch = false) {
 async function chooseDirectory(images = false, create = false) {
   if (state.busy) throw new Error('请等待当前生成完成，再切换创作空间。');
   if (!images && process.env.COMICBRAIN_ROOT) throw new Error('当前空间由启动配置指定，请调整启动配置后重新打开应用。');
-  const result = await dialog.showOpenDialog(mainWindow, { title: images ? '选择图片文件夹' : create ? '选择一个空文件夹，新建创作空间' : '打开已有创作空间',
-    message: create ? '请新建或选择一个空文件夹。新空间从空白开始。' : '选择创作空间文件夹，也可以选择包含它的项目文件夹。',
+  const result = create ? await dialog.showSaveDialog(mainWindow, {
+    title: '新建创作空间', buttonLabel: '创建创作空间',
+    message: '输入工作区名称并选择保存位置。系列、创作原则、草稿和图片都会保存在这个文件夹里。',
+    defaultPath: path.join(app.getPath('documents'), '漫画工作区'),
+    properties: ['createDirectory', 'showOverwriteConfirmation'], securityScopedBookmarks: !!process.mas,
+  }) : await dialog.showOpenDialog(mainWindow, { title: images ? '选择图片文件夹' : '打开已有创作空间',
+    message: '选择保存漫画创作资料的文件夹。',
     properties: ['openDirectory', 'createDirectory'], securityScopedBookmarks: !!process.mas });
   if (result.canceled) return;
-  let selected = canonicalPath(result.filePaths[0]);
-  if (process.mas) scopedAccess.remember(selected, result.bookmarks?.[0]);
+  let selected = canonicalPath(create ? result.filePath : result.filePaths[0]);
+  if (process.mas) scopedAccess.remember(selected, create ? result.bookmark : result.bookmarks?.[0]);
   if (!images && !create) selected = selectWorkspace(selected);
-  await leave(async () => {
+  const activate = async () => {
     if (create) {
       const source = app.isPackaged ? path.join(process.resourcesPath, 'server/_internal/app-content/ComicBrain') : path.resolve(__dirname, '../ComicBrain');
       createWorkspace(selected, source);
@@ -101,8 +106,9 @@ async function chooseDirectory(images = false, create = false) {
     }
     if (images) settings.update({ profiles: { ...settings.value.profiles, [workspace]: { imageDir: selected } } });
     else { settings.update({ root: selected }); rememberWorkspace(settings, selected); }
-    await finishQuit(true);
-  });
+    if (bridge) await finishQuit(true);
+  };
+  if (bridge) await leave(activate); else await activate();
 }
 
 async function start() {
@@ -155,10 +161,21 @@ async function start() {
           if (profile.imageDir === directory) delete profiles[key];
       }
       settings.update({ bookmarks, profiles, root: unavailable.includes(settings.value.root) ? null : settings.value.root });
-      dialog.showErrorBox('文件夹需要重新授权', '已回到应用内的创作空间，原文件未删除。请从“创作空间”菜单重新选择这些文件夹：\n' + unavailable.join('\n'));
+      dialog.showErrorBox('文件夹需要重新授权', '请重新选择创作空间文件夹，原文件仍保存在原位置：\n' + unavailable.join('\n'));
     }
   }
+  // App preferences keep only a pointer; all creation data lives in a user folder.
+  if (!process.env.COMICBRAIN_ROOT && (!settings.value.root || !fs.existsSync(settings.value.root))) {
+    const answer = await dialog.showMessageBox({ type: 'question', title: '打开你的创作空间',
+      message: '选择一个文件夹，保存你的漫画创作。',
+      detail: '工作区属于你的文件系统。系列、创作原则、草稿和图片都保存在其中；下次自动打开上次使用的工作区。',
+      buttons: ['新建创作空间', '打开已有空间', '退出'], defaultId: 0, cancelId: 2 });
+    if (answer.response === 2) { await finishQuit(); return; }
+    await chooseDirectory(false, answer.response === 0);
+    if (!settings.value.root || !fs.existsSync(settings.value.root)) { await finishQuit(); return; }
+  }
   ({ root: workspace, imageDir } = resolveWorkspace({ settings: settings.value, env: process.env, packaged: app.isPackaged, repo, data }));
+  ensureWorkspaceManifest(workspace, { images: path.relative(workspace, imageDir) });
   rememberWorkspace(settings, workspace);
   installWorkspaceIPC(ipcMain, event => event.sender === mainWindow?.webContents && event.senderFrame === event.sender.mainFrame && isAppURL(event.senderFrame.url, appURL),
     () => workspaceInfo({ root: workspace, imageDir, settings, locked: !!process.env.COMICBRAIN_ROOT, defaultRoot: path.join(data, 'ComicBrain') }),

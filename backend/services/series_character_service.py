@@ -73,6 +73,8 @@ class SeriesCharacterService:
         from services.console_service import atomic_json
         path = cls.config_path(sid)
         with LOCK:
+            from services.deletion_service import DeletionService
+            DeletionService.assert_project_active(sid)
             if not path.exists():
                 value = {'revision': 1, 'characters': cls.defaults(sid)}
                 atomic_json(path, value)

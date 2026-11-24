@@ -8,6 +8,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from serve_frontend import resolve_public_file  # noqa: E402
+from unittest.mock import patch
 
 
 class FrontendServerAllowlistTest(unittest.TestCase):
@@ -24,14 +25,9 @@ class FrontendServerAllowlistTest(unittest.TestCase):
             REPOSITORY_ROOT / "assets" / "favicon.jpeg",
             resolve_public_file("/assets/favicon.jpeg"),
         )
-        generated_images_dir = (
-            REPOSITORY_ROOT / "backend" / "static" / "images"
-        )
-        with tempfile.NamedTemporaryFile(
-            dir=generated_images_dir,
-            suffix=".png",
-        ) as generated_image:
-            generated_image_path = Path(generated_image.name).resolve()
+        with tempfile.TemporaryDirectory() as directory, patch('serve_frontend.GENERATED_IMAGE_ROOT', Path(directory).resolve()):
+            generated_image_path = Path(directory).resolve() / 'page.png'
+            generated_image_path.write_bytes(b'image')
             self.assertEqual(
                 generated_image_path,
                 resolve_public_file(

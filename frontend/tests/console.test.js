@@ -59,6 +59,61 @@ const page = {
   rows: [{ height: "200px", panels: [{ text: "主角作出选择" }] }],
 };
 
+test("series details render without relying on an active comic draft", () => {
+  const r = runtime();
+  const views = new r.ctx.window.ConsoleViews({ tab: "chapters", visibleDrafts: () => [] });
+  const html = views.seriesDetail({ id: "real-series", name: "一个系列", summary: "故事方向", chapters: [], projects: [], documents: [] });
+  assert.match(html, /一个系列/);
+  assert.match(html, /#editor\/real-series/);
+  assert.doesNotMatch(html, /field-pageCount|field-style/);
+});
+
+test("permanent deletion clears local drafts, legacy sessions and queued saves without resurrection", () => {
+  const r = runtime({comic_sessions:JSON.stringify({old:{id:'old',prompt:'deleted idea',comicBrainProject:{seriesId:'gone',chapterId:'ch001'}}})});
+  const store = new r.Store();
+  const deleted = store.create('series','gone','draft-gone');
+  const retained = store.create('series','keep','draft-keep');
+  store.dirty.add(deleted.id);
+  store.applyDeletions({draftIds:[],seriesIds:['gone'],chapters:[]});
+  assert.equal(store.drafts[deleted.id], undefined);
+  assert.equal(store.dirty.has(deleted.id), false);
+  assert.equal(JSON.parse(r.values.get('comic_sessions')).old, undefined);
+  store.merge([{...deleted, updatedAt:'2099-01-01T00:00:00Z'}]);
+  assert.equal(store.drafts[deleted.id], undefined);
+  assert.throws(() => store.save(deleted), /永久删除/);
+  assert.ok(new r.Store().drafts[retained.id]);
+  assert.equal(new r.Store().drafts[deleted.id], undefined);
+});
+
+test("chapter deletion drops stale cached copies and accepts the remaining chapters from the server", () => {
+  const r = runtime(), store = new r.Store();
+  const old = store.create('series','series-one','multi');
+  old.canonChapters = {'0':{chapterId:'ch001'},'1':{chapterId:'ch002'}};
+  store.dirty.add(old.id);
+  store.applyDeletions({draftIds:[],seriesIds:[],chapters:[{seriesId:'series-one',chapterId:'ch001'}]});
+  store.merge([{...old, canonChapters:{'0':{chapterId:'ch002'}}, title:'保留章节', revision:'new'}]);
+  assert.equal(store.drafts.multi.title, '保留章节');
+  assert.equal(store.dirty.has('multi'), false);
+});
+
+test("deletion confirmation names the scope and cancellation sends no destructive request", async () => {
+  const r = runtime(), c = Object.create(r.controller), requests=[];
+  c.job = async fn => fn();
+  c.store = {flushAll:async()=>{}};
+  c.render=()=>{};
+  c.confirmDeletion = async () => false;
+  r.API.request = async (...args) => {requests.push(args);return {token:'pending',name:'草稿'};};
+  await c.deleteWork({kind:'draft',draft_id:'draft-one'});
+  assert.equal(requests.length,1);
+  assert.equal(requests[0][0],'/console/delete/prepare');
+  const views = new r.ctx.window.ConsoleViews({});
+  const html = views.deletionConfirmation({name:'<草稿>',kind:'chapter',draftCount:1,memoryCount:3});
+  assert.match(html,/无法恢复/);
+  assert.match(html,/后续剧情不再参考/);
+  assert.match(html,/&lt;草稿&gt;/);
+  assert.match(html,/value="cancel" autofocus/);
+});
+
 test("existing series can plan with an empty idea and preserve classic inspiration for review", async () => {
   const r = runtime(), c = Object.create(r.controller), store = new r.Store();
   const d = store.create("series", "test", "draft-auto");
@@ -85,6 +140,71 @@ test("existing series can plan with an empty idea and preserve classic inspirati
   assert.match(html, /机制启发/);
   const single = store.create("single", null, "draft-single-empty");
   await assert.rejects(c.plan(single), /写下一句想法/);
+});
+
+test("new series reference is retained in draft storage and sent on its first plan", async () => {
+  const r = runtime(), store = new r.Store(), c = Object.create(r.controller);
+  const d = store.create("series", "draft-new", "draft-reference");
+  d.seriesBrief = "一个家庭的日常";
+  c.active = d;
+  c.changed = () => {};
+  for (const [key, value] of Object.entries({work: "家有儿女", mode: "plot", brief: "亲子误会，温暖收尾"})) {
+    c.input({target: {dataset: {seriesReference: key}, value}});
+  }
+  store.local();
+  const reloaded = new r.Store().drafts[d.id];
+  assert.equal(reloaded.seriesReference.work, "家有儿女");
+  assert.equal(reloaded.inspirationReference, "");
+  c.store = {flush: async () => {}};
+  c.render = () => {};
+  c.textConfig = () => ({});
+  let sent;
+  r.API.request = async (path, method, body) => {
+    sent = body;
+    return {plan: {chapters: [{title: "新话", beats: ["起", "承", "果"]}], ruleApplications: []}};
+  };
+  await c.plan(d);
+  assert.equal(sent.series_reference.work, "家有儿女");
+  assert.equal(sent.inspiration_reference, "");
+  const views = new r.ctx.window.ConsoleViews({});
+  assert.match(views.referenceForm(reloaded.seriesReference), /家有儿女/);
+  assert.match(views.referenceSummary(reloaded), /每话选具体剧情再改编/);
+  assert.match(views.referenceForm({work: '<script>', mode: 'tone', brief: 'x'}), /&lt;script&gt;/);
+});
+
+test("reference scene discovery, selection and ordering stay in the series brief", async () => {
+  const r=runtime(), c=Object.create(r.controller), store=new r.Store();
+  c.active=store.create('series','draft-new','scene-draft');
+  c.active.seriesReference={work:'参考作品',mode:'plot',brief:''};
+  c.job=async fn=>fn(); c.render=()=>{}; c.changed=()=>{}; c.textConfig=()=>({});
+  c.referenceSearches={};
+  const scenes=[{id:'first',work:'参考作品',title:'片段甲',reference:'原作冲突',mechanism:'亮点',adaptationHint:'改编方向',sourceStatus:'模型记忆待核实',sources:[]},
+    {id:'second',work:'参考作品',title:'片段乙',reference:'另一个冲突',mechanism:'亮点',adaptationHint:'新的方向',sourceStatus:'搜索摘要待核实',sources:[{title:'来源',url:'https://example.com/story'}]}];
+  let sent;
+  r.API.request=async(path,method,body)=>{sent={path,body};return {candidates:scenes,notice:'测试候选'};};
+  await c.referenceSceneAction('search-reference-scenes',{dataset:{}});
+  assert.equal(sent.path,'/console/reference/search');
+  assert.equal(sent.body.work,'参考作品');
+  assert.equal(sent.body.candidate_count,10);
+  assert.equal(c.active.seriesReference.storyline,undefined);
+  await c.referenceSceneAction('toggle-reference-scene',{dataset:{scene:'first'}});
+  await c.referenceSceneAction('toggle-reference-scene',{dataset:{scene:'second'}});
+  assert.equal(c.active.seriesReference.storyline.length,2);
+  await c.referenceSceneAction('move-reference-up',{dataset:{index:'1'}});
+  assert.equal(c.active.seriesReference.storyline[0].id,'second');
+  const views=new r.ctx.window.ConsoleViews(c);
+  const html=views.referenceScenes(c.active.seriesReference,null);
+  assert.match(html,/已选系列脉络 · 2/);
+  assert.match(html,/搜索摘要待核实/);
+  assert.match(html,/https:\/\/example.com\/story/);
+  assert.match(html,/这些是待创作计划/);
+  assert.match(html,/<details><summary>亮点与来源/);
+  assert.doesNotMatch(html,/<details open/);
+  await c.referenceSceneAction('remove-reference-scene',{dataset:{index:'0'}});
+  assert.equal(c.active.seriesReference.storyline.length,1);
+  c.input({target:{dataset:{seriesReference:'work'},value:'更换作品'}});
+  assert.equal(c.active.seriesReference.storyline.length,0);
+  assert.equal(c.active.inspirationReference,'');
 });
 
 test("legacy sessions retain generated images with the matching visual fingerprint", () => {
@@ -650,4 +770,37 @@ test("AI plot originals survive human edits and chapter switching", async () => 
   d.futureGuidance = "";
   c.restoreChapter(d);
   assert.equal(d.futureGuidance, "以后也展示选择的后果");
+});
+
+test("publishing copy labels each field and keeps the author comment separate", async () => {
+  const r = runtime(), c = Object.create(r.controller);
+  const social = { title: "班长", content: "记名本只剩哪吒", tags: ["#漫画", "校园"], comment: "你会怎么选？", platform: "xiaohongshu", schemaVersion: 2 };
+  const html = new r.ctx.window.ConsoleViews({}).socialCopy(social);
+  for (const label of ["标题", "正文", "话题标签", "首条互动评论建议"]) assert.ok(html.includes(`<h4>${label}</h4>`));
+  assert.match(html, /#漫画 #校园/);
+  assert.doesNotMatch(html, /这是旧版文案/);
+  assert.match(new r.ctx.window.ConsoleViews({}).socialCopy({ ...social, schemaVersion: undefined }), /这是旧版文案/);
+  c.active = { social };
+  c.notify = () => {};
+  let copied;
+  r.ctx.navigator = { clipboard: { writeText: async value => { copied = value; } } };
+  const click = part => c.click({ target: { closest: selector => selector === "button" ? { dataset: { action: "copy-social", ...(part ? { socialPart: part } : {}) } } : null } });
+  await click();
+  assert.equal(copied, "班长\n\n记名本只剩哪吒\n\n#漫画 #校园");
+  await click("comment");
+  assert.equal(copied, social.comment);
+});
+
+test("social generation sends the current chapter title and every authored panel", async () => {
+  const r = runtime(), c = Object.create(r.controller);
+  const d = { id: "draft-social", title: "代理班长", pages: [structuredClone(page)] };
+  let payload;
+  r.ctx.ComicAPI = { generateSocialMediaContent: async (_key, data) => { payload = data; return { title: "发布标题" }; } };
+  c.textConfig = () => ({});
+  c.render = c.changed = () => {};
+  c.store = { flush: async () => {} };
+  await c.social(d, "xiaohongshu");
+  assert.equal(payload.title, d.title);
+  assert.deepEqual(payload.pages, d.pages);
+  assert.equal(d.social.title, "发布标题");
 });

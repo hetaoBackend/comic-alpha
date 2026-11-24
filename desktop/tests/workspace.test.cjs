@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createWorkspace, selectWorkspace, rememberWorkspace, workspaceInfo, installWorkspaceIPC } = require('../workspace.cjs');
+const { createWorkspace, selectWorkspace, rememberWorkspace, ensureWorkspaceManifest, workspaceInfo, installWorkspaceIPC } = require('../workspace.cjs');
 const { Settings, resolveWorkspace } = require('../settings.cjs');
 
 function fixture(t) {
@@ -62,4 +62,23 @@ test('workspace IPC checks the caller and accepts only known actions', async () 
   assert.equal(calls.length, 0);
   assert.equal((await handlers.get('comic:workspace-action')({trusted:true},'choose')).ok, true);
   assert.equal(calls[0][0], 'choose');
+});
+
+test('a new workspace folder is portable with its own images and stable identity', t => {
+  const { temp, source } = fixture(t);
+  const original = path.join(temp, 'New folder');
+  createWorkspace(original, source);
+  const before = ensureWorkspaceManifest(original);
+  fs.writeFileSync(path.join(original, 'images', 'page.png'), 'image');
+  const moved = path.join(temp, 'Renamed folder');
+  fs.renameSync(original, moved);
+  assert.equal(ensureWorkspaceManifest(moved).id, before.id);
+  assert.equal(resolveWorkspace({ settings: { root: moved }, env: {} }).imageDir, path.join(fs.realpathSync(moved), 'images'));
+  assert.equal(fs.readFileSync(path.join(moved, 'images', 'page.png'), 'utf8'), 'image');
+});
+
+test('startup never silently opens an app-owned folder or replaces missing user data', t => {
+  const { temp } = fixture(t);
+  assert.throws(() => resolveWorkspace({ settings: {}, env: {}, data: temp, packaged: true }), /选择或新建/);
+  assert.throws(() => resolveWorkspace({ settings: { root: path.join(temp, 'missing') }, env: {} }), /移动或不可用/);
 });

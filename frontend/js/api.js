@@ -130,6 +130,8 @@ class ComicAPI {
                     language: language,
                     comicbrain_source: comicBrainSource,
                     console_draft_id: imageConfig.consoleDraftId || null,
+                    console_owner_draft_id: imageConfig.consoleOwnerDraftId || null,
+                    console_owner_revision: imageConfig.consoleOwnerRevision || null,
                     comicbrain_render: comicBrainRender
                 })
             });
@@ -228,7 +230,9 @@ class ComicAPI {
                     language: language,
                     custom_requirements: customRequirements,
                     comicbrain_source: comicBrainSource,
-                    console_draft_id: imageConfig.consoleDraftId || null
+                    console_draft_id: imageConfig.consoleDraftId || null,
+                    console_owner_draft_id: imageConfig.consoleOwnerDraftId || null,
+                    console_owner_revision: imageConfig.consoleOwnerRevision || null
                 })
             });
 

@@ -18,7 +18,8 @@ class CreativeAssistant {
     this.mobileQuery.addEventListener("change", () => this.accessibility());
     document.addEventListener("click", event => {
       const entry = event.target.closest("[data-assistant]");
-      if (entry) this.open(this.targetFor(entry), entry.dataset.assistantPrompt);
+      if (entry?.closest(".topbar") && this.opened) this.close();
+      else if (entry) this.open(this.targetFor(entry), entry.dataset.assistantPrompt);
     });
     this.element.addEventListener("click", event => this.click(event));
     this.element.addEventListener("input", event => {
@@ -65,6 +66,25 @@ class CreativeAssistant {
     const entries = Object.entries(this.sessions).slice(-12);
     try { localStorage.setItem(this.storageKey, JSON.stringify(Object.fromEntries(entries))); }
     catch { /* The in-memory discussion and instruction stay available. */ }
+  }
+  purgeDeleted(state) {
+    let previous = {};
+    try { previous = JSON.parse(localStorage.getItem(`${this.storageKey}:deletions`) || '{}'); } catch {}
+    const newChapters = (state.chapters || []).filter(c => !previous.chapters?.some(p => p.seriesId === c.seriesId && p.chapterId === c.chapterId));
+    let changed = false;
+    for (const key of Object.keys(this.sessions)) {
+      try {
+        const target = JSON.parse(key);
+        const sid = target.series_id || this.app.store.drafts[target.draft_id]?.seriesId;
+        if (state.draftIds?.includes(target.draft_id) || state.seriesIds?.includes(sid) || newChapters.some(c => c.seriesId === sid)) {
+          delete this.sessions[key];
+          changed = true;
+          if (key === this.sessionKey) this.close();
+        }
+      } catch {}
+    }
+    try { localStorage.setItem(`${this.storageKey}:deletions`, JSON.stringify(state)); } catch {}
+    if (changed) this.save();
   }
   currentDraft() {
     const [route, id] = this.app.route();
@@ -149,6 +169,7 @@ class CreativeAssistant {
     this.error = "";
     this.element.hidden = false;
     document.body.classList.add("assistant-open");
+    this.app.syncInspector?.();
     this.render();
     this.accessibility();
     if (focus) this.element.querySelector("textarea")?.focus({ preventScroll: true });
@@ -157,6 +178,7 @@ class CreativeAssistant {
     this.opened = false;
     this.element.hidden = true;
     document.body.classList.remove("assistant-open");
+    this.app.syncInspector?.();
     this.accessibility();
     if (this.returnFocus?.isConnected) this.returnFocus.focus({ preventScroll: true });
   }

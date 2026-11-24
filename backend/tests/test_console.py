@@ -20,6 +20,11 @@ class ConsoleTest(unittest.TestCase):
         self.root=Path(self.temporary.name)
         self.environment=patch.dict(os.environ,{'COMICBRAIN_ROOT':str(self.root)})
         self.environment.start()
+        # Unit tests stub discovery independently of the planner; real search
+        # and the source-selection contract have their own focused tests.
+        self.source_selection = patch('services.reference_scene_service.ReferenceSceneService.auto_select', return_value=[])
+        self.source_selection.start()
+        self.addCleanup(self.source_selection.stop)
         self.client=app.test_client()
         self.headers={'Origin':'http://localhost:8000'}
         self.series=self.root/'wiki/系列/test-测试'
@@ -103,7 +108,7 @@ class ConsoleTest(unittest.TestCase):
         self.assertEqual({str(p):p.read_bytes() for p in (self.root/'wiki').rglob('*.md')},before)
 
     def test_explicit_classic_reference_is_sent_and_adaptation_is_returned(self):
-        inspiration={'work':'武林外传','reference':'争抢临时头衔的小冲突','mechanism':'权力与责任错位','adaptation':'主角抢到值日队长，却必须自己收拾残局','sourceStatus':'机制启发'}
+        inspiration={'work':'武林外传','reference':'测试片段，不作原作事实断言','mechanism':'权力与责任错位','adaptation':'主角抢到值日队长，却必须自己收拾残局','sourceStatus':'模型记忆待核实', 'sourceScene': {'characters':'原作人物','setup':'原作处境','choice':'原作选择','result':'原作结果'}}
         result={'chapters':[{'title':'队长只有一天','beats':['抢头衔','推责任','收拾残局'],'inspiration':inspiration}], 'ruleApplications':[{'documentId':'01-故事','status':'采用','reason':'主动选择带来代价'}]}
         with patch.object(ConsoleService,'ask',return_value=result) as model:
             plan=ConsoleService.plan({'series_id':'test','idea':'主角争当队长','inspiration_reference':'武林外传','chapter_count':1})
@@ -116,6 +121,61 @@ class ConsoleTest(unittest.TestCase):
         with patch.object(ConsoleService,'ask',return_value=result):
             with self.assertRaises(ComicBrainValidationError):
                 ConsoleService.plan({'series_id':'test','inspiration_reference':'武林外传'})
+
+    def reference_preference(self, status='stable'):
+        (self.series/'05-系列偏好.md').write_text(
+            '# 系列偏好\n\n| 规则 ID | 类别 | 可执行规则 | 状态 |\n|---|---|---|---|\n'
+            f'| PREF-002 | 标杆使用 | 从《武林外传》选小片段学习情景喜剧机制，再改写任务和选择 | {status} |\n')
+
+    def reference_plan(self):
+        return {'chapters': [{'title': '新故事', 'beats': ['起', '承', '果'], 'inspiration': {
+            'work': '武林外传', 'reference': '测试片段，不作原作事实断言', 'mechanism': '测试冲突',
+            'adaptation': '转化为新任务', 'sourceStatus': '模型记忆待核实',
+            'sourceScene': {'characters': '原作人物', 'setup': '原作处境', 'choice': '原作选择', 'result': '原作后果'}}}],
+            'ruleApplications': [
+                {'documentId': '01-故事', 'status': '采用', 'reason': '主动选择'},
+                {'documentId': '05-系列偏好', 'status': '采用', 'reason': '选原作片段再改写'}]}
+
+    def test_inherited_reference_rejects_missing_or_mechanism_only_even_when_rule_claims_adopted(self):
+        self.reference_preference()
+        for inspiration in [None, {**self.reference_plan()['chapters'][0]['inspiration'], 'sourceStatus': '机制启发'},
+                            {**self.reference_plan()['chapters'][0]['inspiration'], 'sourceScene': {}},
+                            {**self.reference_plan()['chapters'][0]['inspiration'], 'work': '其他作品'}]:
+            result = self.reference_plan()
+            result['chapters'][0]['inspiration'] = inspiration
+            with self.subTest(inspiration=inspiration), patch.object(ConsoleService, 'ask', return_value=result):
+                with self.assertRaises(ComicBrainValidationError): ConsoleService.plan({'series_id': 'test'})
+
+    def test_inherited_reference_is_explicit_in_model_input_and_checked_for_every_chapter(self):
+        self.reference_preference()
+        with patch.object(ConsoleService, 'ask', return_value=self.reference_plan()) as model:
+            ConsoleService.plan({'series_id': 'test'})
+        requirement = json.loads(model.call_args.args[2])['required_inspirations'][0]
+        self.assertEqual(requirement['works'], ['武林外传'])
+        self.assertTrue(requirement['specificScene'])
+        result = self.reference_plan()
+        result['chapters'].append({'title': '第二话', 'beats': ['起', '承', '果']})
+        with patch.object(ConsoleService, 'ask', return_value=result):
+            with self.assertRaises(ComicBrainValidationError): ConsoleService.plan({'series_id': 'test', 'chapter_count': 2})
+
+    def test_reference_scope_candidate_and_explicit_override(self):
+        self.reference_preference('candidate')
+        self.assertEqual(ConsoleService.inspiration_requirements(ConsoleService.context('test')), [])
+        self.reference_preference()
+        self.assertEqual(ConsoleService.inspiration_requirements(ConsoleService.context()), [])
+        requirement = ConsoleService.inspiration_requirements(ConsoleService.context('test'), '本次参考《其他作品》')
+        self.assertEqual(requirement[0]['works'], ['其他作品'])
+        self.assertTrue(requirement[0]['specificScene'])
+
+    def test_storyboard_keeps_chapter_reference_context(self):
+        self.draft['chapters'] = self.reference_plan()['chapters']
+        self.save()
+        with patch('services.comic_service.ComicService.generate_comic_script', return_value={}) as model:
+            ConsoleService.storyboard({'draft_id': 'draft-test'})
+        self.assertIn('sourceScene', model.call_args.args[0])
+        with patch('services.comic_service.ComicService.generate_comic_script', return_value={}) as model:
+            ConsoleService.storyboard({'draft_id': 'draft-test', 'revise': True})
+        self.assertIn('sourceScene', model.call_args.args[0])
 
     def test_automatic_planning_requires_series_context_and_valid_reference(self):
         for data in [{'idea':''},{'series_id':'draft-new','idea':''}, {'series_id':'test','inspiration_reference':[]}, {'series_id':'test','inspiration_reference':'x'*4001}]:
@@ -235,7 +295,7 @@ class ConsoleTest(unittest.TestCase):
         self.valid_workspace()
         registry=self.root/'wiki/系列/index.md'
         registry.write_text(registry.read_text()+'\n<!-- SERIES_ROWS -->\n')
-        self.draft.update(seriesId='draft-new-series',seriesName='新系列',seriesBrief='小雨必须学会面对自己造成的麻烦。',coverBrief='小雨站在课桌前。')
+        self.draft.update(seriesId='draft-new-series',seriesName='新系列',seriesBrief='小雨必须学会面对自己造成的麻烦。',coverBrief='小雨站在课桌前。', seriesReference={'work':'家有儿女','mode':'plot','brief':'亲子日常误会，温暖收尾'})
         d=self.save()
         with patch.object(ConsoleService,'ask',return_value=self.compact_result()):
             result=CanonService.save({'draft_id':d['id'],'revision':d['revision']})
@@ -244,6 +304,12 @@ class ConsoleTest(unittest.TestCase):
         directory=ConsoleService.series_dirs()[sid]
         self.assertIn('小雨必须学会面对自己造成的麻烦。',(directory/'00-系列总览.md').read_text())
         self.assertEqual(result['draft']['canonChapters']['0']['chapterId'],'ch001')
+
+        from services.series_reference_service import SeriesReferenceService
+        self.assertEqual(SeriesReferenceService.get(sid)['work'], '家有儿女')
+        inherited = ConsoleService.inspiration_requirements(ConsoleService.context(sid))
+        self.assertEqual(inherited[0]['works'], ['家有儿女'])
+        self.assertTrue(inherited[0]['specificScene'])
 
     def test_direct_save_conflict_and_stale_draft_never_write(self):
         self.valid_workspace();self.draft['coverBrief']='独立封面';d=self.save();baseline=CanonService.hashes()

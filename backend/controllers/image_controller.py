@@ -20,6 +20,13 @@ image_bp = Blueprint('image', __name__)
 logger = logging.getLogger(__name__)
 
 
+def _generation_owner(data):
+    from services.deletion_service import DeletionService
+    if data.get('console_owner_draft_id') and not is_trusted_local_request():
+        raise ComicBrainValidationError('草稿出图仅允许本机访问')
+    return DeletionService.image_owner(data)
+
+
 def _comicbrain_image_size(project, fallback):
     """Use the server-owned production size for ComicBrain output."""
     if not isinstance(project, dict):
@@ -233,6 +240,7 @@ def generate_comic_image():
         )
 
         # Generate image using service
+        owner = _generation_owner(data)
         image_url, prompt = ImageService.generate_comic_image(
             page_data=page_data,
             comic_style=comic_style,
@@ -253,6 +261,8 @@ def generate_comic_image():
         
         if not image_url:
             return jsonify({"error": "Image generation failed"}), 500
+        from services.deletion_service import DeletionService
+        DeletionService.finish_image(owner, image_url)
 
         render_record = None
         comicbrain_render = data.get("comicbrain_render")
@@ -287,7 +297,14 @@ def generate_comic_image():
             "comicbrain_render": render_record,
         })
         
+    except ComicBrainConflictError as e:
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
+        from provider_errors import provider_error_response
+        provider_failure = provider_error_response(e)
+        if provider_failure:
+            payload, status = provider_failure
+            return jsonify(payload), status
         return jsonify({"error": str(e)}), 500
 
 
@@ -366,6 +383,7 @@ def generate_comic_cover_endpoint():
         )
 
         # Generate cover using service
+        owner = _generation_owner(data)
         image_url, prompt = ImageService.generate_comic_cover(
             comic_style=comic_style,
             google_api_key=google_api_key,
@@ -384,6 +402,8 @@ def generate_comic_cover_endpoint():
         
         if not image_url:
             return jsonify({"error": "Cover generation failed"}), 500
+        from services.deletion_service import DeletionService
+        DeletionService.finish_image(owner, image_url)
         
         return jsonify({
             "success": True,
@@ -391,7 +411,14 @@ def generate_comic_cover_endpoint():
             "prompt": prompt
         })
         
+    except ComicBrainConflictError as e:
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
+        from provider_errors import provider_error_response
+        provider_failure = provider_error_response(e)
+        if provider_failure:
+            payload, status = provider_failure
+            return jsonify(payload), status
         return jsonify({"error": str(e)}), 500
 
 
@@ -422,4 +449,9 @@ def proxy_image():
         )
         
     except Exception as e:
+        from provider_errors import provider_error_response
+        provider_failure = provider_error_response(e)
+        if provider_failure:
+            payload, status = provider_failure
+            return jsonify(payload), status
         return jsonify({"error": str(e)}), 500

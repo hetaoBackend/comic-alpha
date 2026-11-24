@@ -10,12 +10,24 @@ import os
 import re
 import tempfile
 import threading
+from functools import wraps
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 
 logger = logging.getLogger(__name__)
+
+
+def serialized_mutation(method):
+    @wraps(method)
+    def guarded(cls, series_id, chapter_id, *args, **kwargs):
+        from services.console_service import LOCK
+        from services.deletion_service import DeletionService
+        with LOCK:
+            DeletionService.assert_project_active(series_id, chapter_id)
+            return method(cls, series_id, chapter_id, *args, **kwargs)
+    return guarded
 
 
 class ComicBrainError(Exception):
@@ -209,6 +221,7 @@ class ComicBrainProjectService:
         return manifest
 
     @classmethod
+    @serialized_mutation
     def record_page_render(
         cls,
         series_id: Any,
@@ -658,6 +671,7 @@ class ComicBrainProjectService:
         )
 
     @classmethod
+    @serialized_mutation
     def save_review(
         cls,
         series_id: Any,

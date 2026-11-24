@@ -461,10 +461,13 @@ def generate_codex_image_core(
         "instructions": CODEX_IMAGE_INSTRUCTIONS,
         "tools": [tool],
         "tool_choice": {"type": "image_generation"},
-        "reasoning": {"effort": reasoning_effort},
         "stream": True,
         "store": False,
     }
+    # Codex can inherit reasoning effort as image complexity, which GPT Image 2 rejects.
+    if model not in {"gpt-image-2", "gpt-image-2-2026-04-21"}:
+        body["reasoning"] = {"effort": reasoning_effort}
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "text/event-stream",

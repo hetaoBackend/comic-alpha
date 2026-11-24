@@ -10,7 +10,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
 from urllib.parse import unquote, urlsplit
-from backend.runtime_paths import resource_root, image_directory, workspace_id
+from backend.runtime_paths import resource_root, image_directory, workspace_id, workspace_directory, pin_workspace
+
+if __name__ == '__main__':
+    pin_workspace()
 
 
 REPOSITORY_ROOT = resource_root()
@@ -68,7 +71,8 @@ class PublicOnlyRequestHandler(SimpleHTTPRequestHandler):
         if urlsplit(self.path).path == '/runtime-config.js':
             from io import BytesIO
             api_url = getattr(self.server, 'api_base_url', None) or os.environ.get('COMIC_API_BASE_URL', 'http://localhost:5003/api')
-            body = ('window.COMIC_RUNTIME = Object.freeze(' + json.dumps({'apiBaseUrl': api_url, 'workspaceId': workspace_id()}).replace('<', '\\u003c') + ');').encode()
+            root = workspace_directory()
+            body = ('window.COMIC_RUNTIME = Object.freeze(' + json.dumps({'apiBaseUrl': api_url, 'workspaceId': workspace_id(), 'workspace': {'name': root.name, 'path': str(root)}}).replace('<', '\\u003c') + ');').encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/javascript; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))

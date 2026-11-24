@@ -78,6 +78,11 @@ class CanonService:
                 text = overview.read_text(encoding='utf-8')
                 text = re.sub(r'(## 一句话提案\s*\n)[\s\S]*?(?=\n## |\Z)', lambda m: m.group(1)+'\n'+draft['seriesBrief'].strip()+'\n', text, count=1)
                 overview.write_text(text, encoding='utf-8')
+            if new_series and draft.get('seriesReference') is not None:
+                from services.series_reference_service import SeriesReferenceService
+                reference = SeriesReferenceService.clean(draft['seriesReference'])
+                preference_path = staged_dir/'05-系列偏好.md'
+                preference_path.write_text(SeriesReferenceService.compose(preference_path.read_text(encoding='utf-8'), sid, reference, decision, date), encoding='utf-8')
             current={p.relative_to(stage).as_posix():p.read_text(encoding='utf-8') for p in staged_dir.rglob('*.md') if 'assets' not in p.parts and '提案' not in p.parts}
             # Include exact paths and protocol so the proposal is reviewable and compilable.
             protocols={name:(root/'.agents/skills/comic-wiki/references'/name).read_text(encoding='utf-8') for name in ['update-protocol.md','creation-rule-protocol.md']}
@@ -112,9 +117,14 @@ changes 为 [{path:相对工作空间的完整路径,content:完整文件正文}
                     raise ComicBrainValidationError('提案包含其他系列的数据，已阻止')
                 target.parent.mkdir(parents=True,exist_ok=True)
                 target.write_text(content,encoding='utf-8')
+            if new_series and draft.get('seriesReference') is not None:
+                # Memory extraction cannot discard the creator's explicit setting.
+                preference_path.write_text(SeriesReferenceService.compose(preference_path.read_text(encoding='utf-8'), sid, reference, decision, date), encoding='utf-8')
             # Server-owned decision is appended in staging before the validator sees links.
             evidence=f'\n\n### {decision} · {draft.get("title", "章节定稿")}\n\n- 时间：{now()}\n- 系列：{sid}\n- 用户指令：创作者主动点击“保存本话到系列”，授权保存最终编辑稿并更新系列记忆。\n- 变更摘要：{result.get("summary", "")}\n- 影响页面：'+', '.join(sorted(seen))+'\n- 偏好记忆：无；本次仅为章节定稿。\n'
             evidence_path=stage/'wiki/证据/剧情决策日志.md'
+            if new_series and draft.get('seriesReference') is not None:
+                evidence += '- 系列长期参考（创作者明确设置，后续每话自动使用）：' + json.dumps(reference, ensure_ascii=False) + '\n'
             with evidence_path.open('a',encoding='utf-8') as handle:handle.write(evidence)
             if result.get('feedbackEvidence'):
                 with (stage/'wiki/证据/用户反馈日志.md').open('a', encoding='utf-8') as handle:

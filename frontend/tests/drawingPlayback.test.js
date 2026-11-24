@@ -18,6 +18,33 @@ function runtime(saved) {
   return { ctx, config: ctx.window.ConfigManager, controller: vm.runInContext('UIController.prototype', ctx) };
 }
 
+test('fractional frame targets advance across strokes without stalling', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../js/drawingPlayback.js'), 'utf8');
+  const ctx = vm.createContext({ window: {} });
+  vm.runInContext(source.replace('window.DrawingPlayback = { play };', 'window.DrawingPlayback = { painter };'), ctx);
+  const ends = [];
+  const canvas = {
+    beginPath() {},
+    moveTo() {},
+    lineTo(x) { this.end = x; },
+    stroke() {
+      assert.ok(ends.length < 170, 'the painter must not repeat a stroke indefinitely');
+      ends.push(this.end);
+    },
+  };
+  const paths = Array.from({ length: 168 }, (_, index) =>
+    Array.from({ length: index === 167 ? 216 : 240 }, (_, x) => [x, index]));
+  const draw = ctx.window.DrawingPlayback.painter(canvas, paths, 1, 1);
+
+  draw((1000 / 30) / 60000 / .45);
+  draw((1000 / 15) / 60000 / .45);
+  assert.equal(ends.length, 2);
+  assert.ok(ends[1] > ends[0]);
+  assert.deepEqual(Array.from(draw(1)), [215, 167]);
+  assert.equal(ends.length, 170);
+  assert.equal(draw(1), null);
+});
+
 test('drawing defaults on for new and existing configurations; explicit opt-out survives reload', () => {
   assert.equal(runtime().config.loadConfig().drawingPlayback, true);
   assert.equal(runtime({ imageQuality: 'high' }).config.loadConfig().drawingPlayback, true);

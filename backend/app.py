@@ -6,7 +6,10 @@ import logging
 import os
 from flask import Flask
 from flask_cors import CORS
-from runtime_paths import image_directory
+from runtime_paths import image_directory, pin_workspace
+
+if __name__ == '__main__':
+    pin_workspace()
 
 # Configure logging
 logging.basicConfig(

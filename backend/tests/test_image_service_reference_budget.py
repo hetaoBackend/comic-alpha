@@ -5,6 +5,7 @@ import json
 import io
 from pathlib import Path
 import base64
+from unittest.mock import patch
 
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,17 +48,14 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
         buffer = io.BytesIO()
         source.save(buffer, format="PNG")
 
-        image_url = _save_generated_image(
-            buffer.getvalue(),
-            target_size="1024x1536",
-        )
-        output = Path(BACKEND_DIR) / image_url.removeprefix("/backend/")
-        try:
+        import tempfile
+        from runtime_paths import generated_image_path
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'COMIC_IMAGE_DIR': directory}):
+            image_url = _save_generated_image(buffer.getvalue(), target_size="1024x1536")
+            output = generated_image_path(image_url)
             with Image.open(output) as normalized:
                 self.assertEqual((1024, 1536), normalized.size)
                 self.assertEqual("PNG", normalized.format)
-        finally:
-            output.unlink(missing_ok=True)
 
         self.assertEqual("2:3", _aspect_ratio_for_size("1024x1536"))
 
@@ -130,6 +128,9 @@ class ImageServiceReferenceBudgetTest(unittest.TestCase):
         self.assertEqual(2, len(request_bodies))
         self.assertEqual('gpt-6.1-sol', request_bodies[0]['model'])
         self.assertEqual('gpt-image-2', request_bodies[0]['tools'][0]['model'])
+        for body in request_bodies:
+            self.assertNotIn("reasoning", body)
+            self.assertEqual("medium", body["tools"][0]["quality"])
         retry_text = request_bodies[1]["input"][0]["content"][0]["text"]
         self.assertIn("CRITICAL RETRY CORRECTION", retry_text)
         self.assertIn("exactly 1024x1536", retry_text)

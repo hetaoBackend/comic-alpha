@@ -10,7 +10,7 @@ function restoreBounds(saved, workAreas) {
     y: valid ? Math.min(Math.max(saved.y, area.y), area.y + area.height - height) : area.y + Math.round((area.height - height) / 2) };
 }
 
-function createWindow({ BrowserWindow, screen, saved = {}, onClose, onPersist }) {
+function createWindow({ BrowserWindow, Menu, screen, saved = {}, onClose, onPersist }) {
   const areas = screen.getAllDisplays().map(display => display.workArea);
   const bounds = restoreBounds(saved.bounds, areas);
   const window = new BrowserWindow({ ...bounds, title: 'ComicPerfect',
@@ -21,6 +21,15 @@ function createWindow({ BrowserWindow, screen, saved = {}, onClose, onPersist })
   if (saved.maximized) window.maximize();
   window.once('ready-to-show', () => window.show());
   window.webContents.on('page-title-updated', event => event.preventDefault());
+  window.webContents.on('context-menu', (_event, params) => {
+    if (params.mediaType !== 'image' || !params.hasImageContents) return;
+    Menu.buildFromTemplate([{
+      label: '复制图片',
+      click: () => {
+        if (!window.webContents.isDestroyed()) window.webContents.copyImageAt(params.x, params.y);
+      },
+    }]).popup({ window });
+  });
   const persist = () => onPersist({ bounds: window.getNormalBounds(), maximized: window.isMaximized(), zoom: window.webContents.getZoomFactor() });
   let timer;
   for (const event of ['resize', 'move']) window.on(event, () => { clearTimeout(timer); timer = setTimeout(persist, 250); });

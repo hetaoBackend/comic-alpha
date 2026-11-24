@@ -8,53 +8,58 @@
     <link rel="apple-touch-icon" href="assets/brand/comicperfect-logo.png" />
     <title>ComicPerfect · 创作工作台</title>
     <link rel="stylesheet" href="frontend/css/style.css?v=9f5c7d6b3c" />
+    <link rel="stylesheet" href="frontend/css/studio.css?v=20261016" />
   </head>
   <body>
     <a class="skip-link" href="#content">跳转到内容</a>
+    <!-- THESIS: A comic studio: navigation left, authored work central, tools right.
+    OWN-WORLD: Cool white canvas, teal actions, compact controls and real comic artwork.
+    STORY: Resume a draft, refine its story and panels, then render and export.
+    FIRST VIEWPORT: 196px navigation, 56px toolbar, a focused working canvas and contextual inspector.
+    FORM: Creator-selected studio composition; surface seed 30115194, user direction overrides deal.
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance -->
     <div class="app-shell">
       <aside class="sidebar" aria-label="主导航">
         <a class="brand" href="#home"
           ><img class="brand-logo" src="assets/brand/comicperfect-logo.png" alt="" width="42" height="42"
           />
-          <span>ComicPerfect<small>让故事，一格格发生</small></span></a
+          <span>ComicPerfect<small>漫画创作工作室</small></span></a
         >
         <nav class="main-nav">
           <a href="#home" data-nav="home" aria-label="创作工作台"
-            ><span class="nav-icon" aria-hidden="true">▦</span>创作工作台</a
+            ><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/></svg></span>创作工作台</a
           >
           <a href="#series" data-nav="series" aria-label="我的系列"
-            ><span class="nav-icon" aria-hidden="true">▤</span>我的系列</a
+            ><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h6l2 2h8v13H4Z"/><path d="M4 10h16"/></svg></span>我的系列</a
           >
           <a href="#library" data-nav="library" aria-label="漫画作品"
-            ><span class="nav-icon" aria-hidden="true">▧</span>漫画作品</a
+            ><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 13h16M12 3v10"/></svg></span>漫画作品</a
           >
           <a href="#principles" data-nav="principles" aria-label="创作原则"
-            ><span class="nav-icon" aria-hidden="true">≡</span>创作原则</a
+            ><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 4h14v16H5Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>创作原则</a
           >
         </nav>
+        <nav id="sidebar-series" class="sidebar-series" aria-label="最近系列"></nav>
         <div class="sidebar-bottom">
-          <a class="workspace-switch" href="#workspace"><span id="workspace-name">本机创作空间</span><small>选择或切换空间</small></a>
           <a class="settings-link" href="#settings"
             >创作设置 <span aria-hidden="true">↗</span></a
           >
-          <div class="profile">
-            <span class="avatar">创</span
-            ><span>我的创作空间<small>本机工作空间</small></span>
-          </div>
+          <a class="profile workspace-switch" href="#workspace" data-nav="workspace">
+            <span class="avatar" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></svg></span>
+            <span class="workspace-identity"><strong id="workspace-name">本机创作空间</strong><small>选择或切换空间</small></span>
+          </a>
         </div>
       </aside>
       <div class="workspace">
         <header class="topbar">
-          <div id="breadcrumb">我的空间 <span>/</span> 创作工作台</div>
+          <div id="breadcrumb">创作工作台</div>
           <div class="topbar-actions">
             <button class="button" data-assistant="context" aria-controls="creative-assistant-panel" aria-expanded="false">创作助手</button>
-            <button class="preview-badge" id="design-notes">使用说明</button>
+            <button class="preview-badge" id="design-notes" aria-label="查看使用说明">帮助</button>
           </div>
         </header>
         <main id="content" tabindex="-1"></main>
-        <footer class="page-footer">
-          <span>草稿与图像版本独立保存</span>
-        </footer>
+
       </div>
     </div>
     <dialog id="notes-dialog" aria-labelledby="notes-title">

@@ -5,7 +5,7 @@
   "description": "ComicPerfect comic creation workspace for Web and macOS",
   "main": "desktop/main.cjs",
   "scripts": {
-    "desktop": "electron .",
+    "desktop": "node desktop/dev.cjs",
     "desktop:prepare": "uv sync --project backend --group desktop",
     "desktop:backend": "uv run --project backend --group desktop python desktop/build_backend.py",
     "desktop:pack": "npm run desktop:backend && node desktop/build_app.cjs pack",

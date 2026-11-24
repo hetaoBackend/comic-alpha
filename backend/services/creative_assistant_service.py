@@ -78,7 +78,7 @@ class CreativeAssistantService:
         if not draft:
             return None
         # Exact writing context only; never send generated/reference images or secrets.
-        fields = ['title', 'idea', 'seriesName', 'seriesBrief', 'futureGuidance', 'coverTitle', 'coverBrief', 'chapterIndex', 'pageCount']
+        fields = ['title', 'idea', 'inspirationReference', 'seriesName', 'seriesBrief', 'futureGuidance', 'coverTitle', 'coverBrief', 'chapterIndex', 'pageCount']
         result = {key: draft.get(key) for key in fields}
         chapter = (draft.get('chapters') or [None])[draft.get('chapterIndex', 0)]
         result['chapter'] = {key: chapter.get(key) for key in ['title', 'summary', 'beats', 'cover', 'inspiration']} if chapter else None
@@ -124,10 +124,13 @@ class CreativeAssistantService:
 document 修改只在 allowed_documents 内用 changes=[{documentKey,body:完整 Markdown 正文}]，不可输出 frontmatter，不改 ID/状态/系列身份。目标资料必须包含在 changes 中。系列人物/世界变更须同步必要的当前状态/关系/时间线等已有资料；不能通过改资料偷偷改写既有章脚本或制造新剧情事实。人物实质改写须在正文包含完整规则应用记录。principle 修改只改当前明确选中的全局原则，不把本系列选择升级到所有系列。局部喜好用本话草稿，不改全局原则。偏好条目可使用 __FEEDBACK_ID__ / __DECISION_ID__ 占位符，由服务端赋真实证据ID。保留原有有效内容，不擅自删除无关章节。
 所有实质修改给出 ruleApplications=[{documentId:context中的id,status:采用/不适用/覆盖/禁止误用,reason:具体改动位置或理由}]，每份有效原则/偏好文档都须判定。
 输出 {message:给用户的直接答复,summary:本次修改摘要,patch:null或上述结构,changes:[],ruleApplications:[]}。不输出内部推理，不编造来源；凭模型记忆引用原作标明待核实。'''
+        system += '\n' + Console.INSPIRATION_PROTOCOL + '\n修改 story 时 patch 还须包含 inspiration（无借鉴时为 null）。保留仍有效的来源，换剧情时同步更新，不能保留与新剧情无关的旧来源。'
+        requirements = Console.inspiration_requirements(docs, (draft or {}).get('inspirationReference', ''), (draft or {}).get('seriesReference') if not Console.series_dirs().get(sid) else None)
         result = Console.ask(data, system, json.dumps({
             'instruction': instruction, 'mode': mode, 'target': target, 'history': clean_history,
             'draft': cls.draft_context(draft, target), 'context': docs,
             'document': document, 'allowed_documents': list(allowed.values()), 'protocols': protocols,
+            'required_inspirations': requirements,
         }, ensure_ascii=False, default=str))
         message = cls.text(result.get('message'), '助手回复', 16000)
         response = {'message': message, 'summary': result.get('summary') if isinstance(result.get('summary'), str) else '', 'proposal': None}
@@ -216,7 +219,10 @@ document 修改只在 allowed_documents 内用 changes=[{documentKey,body:完整
             beats, cover = patch.get('beats'), patch.get('cover')
             if not isinstance(beats, list) or len(beats) != 3 or not isinstance(cover, dict):
                 raise ComicBrainValidationError('剧情需要完整的开场、发展、收束和封面描述')
-            return {'title': cls.text(patch.get('title'), '标题', 300), 'summary': cls.text(patch.get('summary'), '核心冲突', 8000),
+            sid = draft.get('seriesId') if draft.get('mode') == 'series' else None
+            requirements = Console.inspiration_requirements(Console.context(sid), draft.get('inspirationReference', ''), draft.get('seriesReference') if not Console.series_dirs().get(sid) else None)
+            Console.validate_inspiration(patch.get('inspiration'), requirements)
+            return {'inspiration': copy.deepcopy(patch.get('inspiration')), 'title': cls.text(patch.get('title'), '标题', 300), 'summary': cls.text(patch.get('summary'), '核心冲突', 8000),
                 'beats': [cls.text(beat, '剧情节拍', 16000) for beat in beats],
                 'cover': {'title': cls.text(cover.get('title'), '封面标题', 300), 'description': cls.text(cover.get('description'), '封面描述', 8000)}}
         if kind == 'page':
@@ -254,7 +260,7 @@ document 修改只在 allowed_documents 内用 changes=[{documentKey,body:完整
                     draft['idea'] = patch['idea']
                 elif kind == 'story':
                     chapter = draft['chapters'][draft.get('chapterIndex', 0)]
-                    chapter.setdefault('aiOriginal', {k: copy.deepcopy(chapter.get(k)) for k in ['title', 'summary', 'beats', 'cover']})
+                    chapter.setdefault('aiOriginal', {k: copy.deepcopy(chapter.get(k)) for k in ['title', 'summary', 'beats', 'cover', 'inspiration']})
                     chapter.update(copy.deepcopy(patch))
                     draft.update(title=patch['title'], coverTitle=patch['cover']['title'], coverBrief=patch['cover']['description'], storyDirty=True)
                 elif kind == 'cover':
@@ -311,7 +317,7 @@ document 修改只在 allowed_documents 内用 changes=[{documentKey,body:完整
             index = before.get('chapterIndex', 0)
             if before.get('chapters'):
                 chapter = current['chapters'][index]
-                for key in ['title', 'summary', 'beats', 'cover', 'pages', 'aiPages', 'storyDirty']:
+                for key in ['title', 'summary', 'beats', 'cover', 'inspiration', 'pages', 'aiPages', 'storyDirty']:
                     if key in before['chapters'][index]: chapter[key] = copy.deepcopy(before['chapters'][index][key])
                     else: chapter.pop(key, None)
             current['canonDecision'] = None

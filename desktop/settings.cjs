@@ -30,14 +30,19 @@ function canonicalPath(value) {
 }
 
 function resolveWorkspace({ settings, env, packaged, repo, data }) {
-  const root = canonicalPath(env.COMICBRAIN_ROOT || settings.root ||
-    (packaged ? path.join(data, 'ComicBrain') : path.join(repo, 'ComicBrain')));
+  const selected = env.COMICBRAIN_ROOT || settings.root;
+  if (!selected) throw new Error('请先选择或新建一个创作空间文件夹。');
+  const root = canonicalPath(selected);
+  if (!fs.existsSync(root)) throw new Error('创作空间文件夹已移动或不可用，请重新选择。');
+  let manifest = {};
+  const manifestFile = path.join(root, 'comicperfect.workspace.json');
+  if (fs.existsSync(manifestFile)) manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const localImages = path.join(root, 'images');
   const adjacentImages = [path.join(path.dirname(root), 'backend/static/images'), path.join(path.dirname(root), 'images')]
     .find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isDirectory());
   const imageDir = canonicalPath(env.COMIC_IMAGE_DIR || settings.profiles?.[root]?.imageDir ||
-    (settings.root === root ? settings.imageDir : null) || adjacentImages ||
-    (root !== canonicalPath(packaged ? path.join(data, 'ComicBrain') : path.join(repo, 'ComicBrain'))
-      ? path.join(root, 'images') : packaged ? path.join(data, 'images') : path.join(repo, 'backend/static/images')));
+    (settings.root === root ? settings.imageDir : null) || (manifest.images ? path.resolve(root, manifest.images) : null) ||
+    (fs.existsSync(localImages) ? localImages : null) || adjacentImages || localImages);
   return { root, imageDir };
 }
 

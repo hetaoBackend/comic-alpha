@@ -189,7 +189,7 @@ updates仅同步确实受影响的当前人物/关系/世界状态、时间线/�
         if not isinstance(summary, str) or not summary.strip() or len(summary) > 4000:
             raise ComicBrainValidationError('未收到有效的本话剧情摘要')
         apps = result.get('ruleApplications', [])
-        if not isinstance(apps, list) or not apps or not all(isinstance(r, dict) and isinstance(r.get('documentId'), str) and r.get('status') in {'采用', '不适用', '覆盖', '禁止误用'} and isinstance(r.get('reason'), str) and r['reason'].strip() for r in apps):
+        if not isinstance(apps, list) or (catalog and not apps) or not all(isinstance(r, dict) and isinstance(r.get('documentId'), str) and r.get('status') in {'采用', '不适用', '覆盖', '禁止误用'} and isinstance(r.get('reason'), str) and r['reason'].strip() for r in apps):
             raise ComicBrainValidationError('未完成本话的创作依据检查')
         if {d['id'] for d in catalog} - {r['documentId'] for r in apps}:
             raise ComicBrainValidationError('本话创作依据检查不完整')
@@ -221,6 +221,20 @@ updates仅同步确实受影响的当前人物/关系/世界状态、时间线/�
         previous = previous_card.read_text(encoding='utf-8') if previous_card.exists() else ''
         card_body = f'# {title} · 章节卡\n\n## 本话剧情与承接\n\n{summary}\n\n{record}\n\n## 确认记录\n\n- {decision}：采用人工编辑后的最终分镜。'
         card_body += '\n\n'+learning_report
+        chapters = draft.get('chapters') or []
+        index = draft.get('chapterIndex', 0)
+        inspiration = chapters[index].get('inspiration') if 0 <= index < len(chapters) else None
+        if isinstance(inspiration, dict):
+            reference_id = inspiration.get('referenceId')
+            if isinstance(reference_id, str) and re.fullmatch(r'[0-9a-f]{24}', reference_id):
+                card_body += '\n\n- 脉络片段 ID：' + reference_id
+            # Keep the used source in chapter memory for later episode selection.
+            card_body += '\n\n## 本话参考与改编依据\n\n' + '\n'.join(
+                f'- {label}：{inspiration.get(key, "")}' for key, label in [
+                    ('work', '作品'), ('reference', '片段'), ('sourceStatus', '来源状态'),
+                    ('mechanism', '借鉴机制'), ('adaptation', '本话改编')])
+            if isinstance(inspiration.get('sourceScene'), dict):
+                card_body += '\n- 原作片段：' + json.dumps(inspiration['sourceScene'], ensure_ascii=False)
         if previous and metadata(previous, 'creation_stage') != 'skeleton':
             # Preserve full superseded card details in history instead of silently losing authored notes.
             card_body += '\n\n## 历史追溯\n\n上一版章节记录与脚本已随本次决策保存在版本历史中，原有决策证据保留。'

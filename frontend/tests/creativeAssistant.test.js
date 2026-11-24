@@ -44,6 +44,22 @@ test('assistant sends scoped page instructions and prior unadopted edits for fol
   assert.equal(a.session.input, '');
 });
 
+test('deleting a chapter clears its series conversation once and keeps later discussions', () => {
+  const {a,ctx}=assistant(), values=new Map();
+  ctx.localStorage={getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value)};
+  a.storageKey='assistant-test';
+  a.close=()=>{};
+  const unrelated=JSON.stringify({kind:'discuss',series_id:'other'});
+  a.sessions[unrelated]={messages:[{content:'保留的讨论'}]};
+  const state={draftIds:[],seriesIds:[],chapters:[{seriesId:'test',chapterId:'ch001'}]};
+  a.purgeDeleted(state);
+  assert.equal(a.sessions[a.sessionKey],undefined);
+  assert.equal(a.sessions[unrelated].messages[0].content,'保留的讨论');
+  a.sessions[a.sessionKey]={messages:[{content:'删除之后的新讨论'}]};
+  a.purgeDeleted(state);
+  assert.equal(a.sessions[a.sessionKey].messages[0].content,'删除之后的新讨论');
+});
+
 test('failed instructions stay editable and retry does not duplicate the same user message', async () => {
   const { a, ctx } = assistant();
   ctx.ConsoleAPI.request = async () => { throw new Error('暂时不可用'); };

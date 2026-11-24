@@ -176,19 +176,20 @@ After confirming a chapter script in ComicBrain, export its production snapshot 
 
 ```bash
 python3 ComicBrain/.agents/skills/comic-wiki/scripts/export_comic_alpha.py \
+  --root "/absolute/path/to/your-workspace" \
   --series-id <series-id> \
   --chapter-id <chapter-id>
 ```
 
 Start comic-alpha, choose the chapter in the **ComicBrain Storyboards** section, and click **Load Storyboard**. This path skips a second AI script-generation pass and goes directly to human review and image generation. Per-page row counts are preserved, and confirmed ComicBrain character references are used for page and cover generation.
 
-Edits are saved immediately in the browser and written to `ComicBrain/production/<series-id>/<chapter-id>/review.json`. A review is always a production draft and never updates ComicBrain canon automatically. Changes to the source script, layout, or canonical reference assets change the complete production snapshot hash, so an old review cannot override the new storyboard. Page-image versions are also persisted in `renders/manifest.json`. When **Load Storyboard** is clicked again—even in a different browser—unchanged pages recover their images, while changed or new pages become pending and can be generated with **Resume**.
+Edits are saved immediately in the browser and written to `<workspace>/production/<series-id>/<chapter-id>/review.json`. A review is always a production draft and never updates ComicBrain canon automatically. Changes to the source script, layout, or canonical reference assets change the complete production snapshot hash, so an old review cannot override the new storyboard. Page-image versions are also persisted in `renders/manifest.json`. When **Load Storyboard** is clicked again—even in a different browser—unchanged pages recover their images, while changed or new pages become pending and can be generated with **Resume**.
 
-The default workspace is `./ComicBrain` inside the repository. Set `COMICBRAIN_ROOT` only when intentionally using an external workspace.
+The desktop app remembers the selected user-owned workspace folder. Web uses the same folder; set `COMICBRAIN_ROOT` to explicitly select a different workspace.
 
 `ComicBrain/.gitignore` excludes concrete plots, characters, series assets, creator preferences, raw evidence, and chapter production output by default. Git sees only reusable Agent rules, skills, templates, and the production contract. Never force-add the private knowledge paths.
 
-Open `comic-alpha/ComicBrain` as the Obsidian vault. In Codex, open the `comic-alpha` repository root so the top-level Agent rules can route comic knowledge tasks into the embedded ComicBrain workspace.
+Open your selected workspace folder as the Obsidian vault or Codex workspace. The desktop app creates or opens a user-owned folder on first launch and remembers it; Web uses the same last-opened folder unless `COMICBRAIN_ROOT` overrides it. Knowledge, drafts and generated images live in that folder. Its `comicperfect.workspace.json` keeps a stable identity when you move or rename the folder and reopen it. The repository's `ComicBrain` directory supplies reusable scaffolding for new workspaces.
 
 ## Usage Guide
 

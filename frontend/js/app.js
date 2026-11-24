@@ -14,6 +14,8 @@ class UIController {
     this.error = "";
     this.busy = false;
     this.characterEdits = {};
+    this.referenceEdits = {};
+    this.referenceSearches = {};
     this.disclosures = new Map();
     this.renderKey = "";
     this.tab = "chapters";
@@ -156,7 +158,9 @@ class UIController {
     this.render();
     try {
       this.workspace = await ConsoleAPI.request("/console/workspace");
+      this.store.applyDeletions(this.workspace.deletions || {});
       this.store.merge(this.workspace.drafts || []);
+      this.assistant?.purgeDeleted(this.workspace.deletions || {});
       if (this.store.dirty.size) this.store.flushAll().catch(error => this.notify(error.message));
       for (const result of this.workspace.production || [])
         this.hydrateProject(result);
@@ -193,6 +197,19 @@ class UIController {
     this.active = d;
     this.store.save(d);
     this.navigate("#draft/" + d.id);
+  }
+  syncInspector() {
+    const options = this.main.querySelector(".inspector-options");
+    const slot = this.main.querySelector("[data-inline-generation]");
+    const inspector = this.main.querySelector(".editor-aside");
+    if (!options || !slot || !inspector) return;
+    const inline = this.assistant?.opened || window.matchMedia("(max-width: 760px)").matches;
+    if (inline && options.parentElement !== slot) slot.append(options);
+    else if (!inline && options.parentElement !== inspector)
+      inspector.querySelector(".inspector-heading").after(options);
+    options.classList.toggle("inline-generation-options", !!inline);
+    slot.closest("details").querySelector("summary").textContent = inline
+      ? "生成参数 · 页数、画风与更多设置" : "更多设置 · 语言、布局与参考图";
   }
   render() {
     const focused = document.activeElement;
@@ -302,8 +319,12 @@ class UIController {
       settings: "创作设置",
       workspace: "创作空间",
     };
-    document.getElementById("breadcrumb").innerHTML =
-      `我的空间 <span>/</span> ${E(labels[route] || "创作工作台")}`;
+    document.body.dataset.surface = route;
+    const workspaceName = this.workspaceUI?.info?.name || "创作空间";
+    document.getElementById("breadcrumb").innerHTML = `<a href="#workspace">${E(workspaceName)}</a><span>/</span><strong>${E(labels[route] || "创作工作台")}</strong>`;
+    const seriesNav = document.getElementById("sidebar-series");
+    const currentSeries = ["draft", "work"].includes(route) ? this.store.drafts[id]?.seriesId : route === "series" ? id : null;
+    if (seriesNav) seriesNav.innerHTML = `<p>系列</p>${this.seriesList.filter(s => !["deprecated", "archived"].includes(s.status)).slice(0, 5).map(s => `<a href="#series/${encodeURIComponent(s.id)}" ${s.id === currentSeries ? 'aria-current="page"' : ""}><span class="series-dot" aria-hidden="true"></span><span>${E(s.name)}</span></a>`).join("")}<a class="sidebar-new-series" href="#new-series">+ 建立新系列</a>`;
     let html = "";
     if (route === "home") html = this.views.home();
     else if (route === "series")
@@ -338,7 +359,7 @@ class UIController {
           this.switchChapter(Number(chapterIndex));
         html =
           route === "work"
-            ? `${heading(this.active.title || "漫画作品", this.series(this.active.seriesId)?.name || "单篇漫画", link(this.active.mode === "series" ? "返回系列" : "返回作品库", this.active.mode === "series" ? "#series/" + this.active.seriesId : "#library"))}${this.views.output(this.active, true)}`
+            ? `${heading(this.active.title || "漫画作品", this.series(this.active.seriesId)?.name || "单篇漫画", link(this.active.mode === "series" ? "返回系列" : "返回作品库", this.active.mode === "series" ? "#series/" + this.active.seriesId : "#library"))}<div class="editor-layout">${this.views.output(this.active, true)}${this.views.aside(this.active)}</div>`
             : this.views.editor(this.active);
       }
     } else html = this.views.home();
@@ -352,7 +373,7 @@ class UIController {
         html;
     if (this.jobError && this.jobError.hash === location.hash)
       html =
-        `<div class="connection-status error" role="alert"><div><strong>操作未完成</strong><p>${E(this.jobError.message.replace(/ComicBrain/gi, "创作记忆"))}</p><p>已完成内容已保留，可修正后重试。</p></div><div class="inline-actions">${button("重试", "retry-job")}${link("检查创作设置", "#settings")}${button("关闭提示", "dismiss-error")}</div></div>` +
+        `<div class="connection-status error" role="alert"><div><strong>操作未完成</strong><p>${E(this.jobError.message.replace(/ComicBrain/gi, "创作记忆"))}</p><p>已完成内容已保留，可重试。</p></div><div class="inline-actions">${button("重试", "retry-job")}${/自动选段|原作片段|脉络|候选剧情/.test(this.jobError.message) ? button("查找亮点剧情", "open-series-reference") : link("检查创作设置", "#settings")}${button("关闭提示", "dismiss-error")}</div></div>` +
         html;
     if (this.busy)
       html =
@@ -386,10 +407,19 @@ class UIController {
       this.main.querySelector(this.restoreFocusSelector);
     if (restore && !restore.disabled) restore.focus({ preventScroll: true });
     this.commands?.reportState();
+    this.syncInspector();
     this.assistant?.syncContext();
   }
   bind() {
+    window.addEventListener("resize", () => this.syncInspector());
     window.addEventListener("storage", (e) => {
+      if (e.key === `${this.store.key}:deletions` && e.newValue) {
+        try {
+          this.store.applyDeletions(JSON.parse(e.newValue));
+          this.refresh();
+        } catch {}
+        return;
+      }
       if (e.key !== this.store.key || this.busy || !e.newValue) return;
       try {
         this.store.merge(Object.values(JSON.parse(e.newValue)), false);
@@ -502,6 +532,23 @@ class UIController {
     this.commands?.reportState();
   }
   input(e) {
+    if (e.target.hasAttribute?.('data-reference-keywords')) {
+      const key = e.target.dataset.series || this.active?.id || 'new';
+      (this.referenceSearches ||= {})[key] ||= {};
+      this.referenceSearches[key].keywords = e.target.value;
+      return;
+    }
+    if (e.target.dataset.seriesReference) {
+      const sid = e.target.dataset.referenceSeries;
+      const config = this.referenceConfig(sid);
+      if (e.target.dataset.seriesReference === 'work' && config.work !== e.target.value) {
+        config.storyline = [];
+        delete this.referenceSearches?.[sid || this.active?.id || 'new'];
+      }
+      config[e.target.dataset.seriesReference] = e.target.value;
+      if (!sid) this.changed(this.active);
+      return;
+    }
     const characterInput = e.target;
     if (characterInput.dataset.characterName) {
       const config = this.editCharacters(characterInput.dataset.series);
@@ -744,6 +791,41 @@ class UIController {
     const d = this.active,
       action = el.dataset.action;
     if (!action) return;
+    if (action === 'open-series-reference') {
+      const sid = el.dataset.series || this.active?.seriesId;
+      this.jobError = null;
+      if (sid?.startsWith('draft-') && this.active) {
+        this.active.step = 0;
+        this.changed(this.active);
+        this.render();
+      } else if (sid) {
+        this.tab = 'context';
+        this.navigate('#series/' + encodeURIComponent(sid));
+      }
+      return;
+    }
+    if (["search-reference-scenes", "toggle-reference-scene", "move-reference-up", "move-reference-down", "remove-reference-scene"].includes(action)) {
+      await this.referenceSceneAction(action, el);
+      return;
+    }
+    if (["delete-draft", "delete-chapter", "delete-series"].includes(action)) {
+      const target = action === "delete-draft" ? {kind:"draft", draft_id:el.dataset.draft}
+        : {kind:action === "delete-series" ? "series" : "chapter", series_id:el.dataset.series, ...(el.dataset.chapter ? {chapter_id:el.dataset.chapter} : {})};
+      await this.deleteWork(target);
+      return;
+    }
+    if (action === "save-series-reference" || action === "reload-series-reference") {
+      const sid = el.dataset.series;
+      await this.job(async () => {
+        const config = this.referenceEdits?.[sid] || this.series(sid)?.referenceSettings;
+        const saved = await ConsoleAPI.request(`/console/series/${encodeURIComponent(sid)}/reference`, action === "save-series-reference" ? "PUT" : "GET", action === "save-series-reference" ? config : undefined);
+        this.series(sid).referenceSettings = saved;
+        delete this.referenceEdits?.[sid];
+        await this.refresh();
+        this.notify(action === "save-series-reference" ? "参考与系列脉络已保存，后续每话自动沿用。" : "已载入保存的系列参考。");
+      });
+      return;
+    }
     if (["add-character", "remove-character", "remove-character-reference", "save-characters", "reload-characters"].includes(action)) {
       await this.characterAction(action, el);
       return;
@@ -836,12 +918,15 @@ class UIController {
     }
     if (action === "copy-social") {
       try {
+        const parts = {
+          title: d.social.title || "",
+          content: d.social.content || "",
+          tags: (d.social.tags || []).map(t => "#" + t.replace(/^#+/, "")).join(" "),
+          comment: d.social.comment || "",
+        };
         await navigator.clipboard.writeText(
-          [
-            d.social.title,
-            d.social.content,
-            (d.social.tags || []).join(" "),
-          ].join("\n\n"),
+          el.dataset.socialPart ? parts[el.dataset.socialPart] :
+            [parts.title, parts.content, parts.tags].filter(Boolean).join("\n\n"),
         );
         this.notify("文案已复制");
       } catch {
@@ -873,6 +958,11 @@ class UIController {
           currentImage(d.images[Number(el.dataset.page)]).imageUrl,
           `${d.title}-${Number(el.dataset.page) + 1}.png`,
         );
+      else if (action === "download-cover")
+        await this.downloadImage(
+          d.coverImages[Number(el.dataset.cover)].imageUrl,
+          `${d.title}-封面-${Number(el.dataset.cover) + 1}.png`,
+        );
       else if (action === "export-work") await this.exportWork(d);
       else if (action === "cover") await this.cover(d);
       else if (action === "social") await this.social(d, el.dataset.platform);
@@ -880,6 +970,96 @@ class UIController {
       else if (action === "canon") await this.saveToSeries(d);
       else if (action === "retrospective") await this.generateRetrospective(d);
       else if (action === "save-retrospective") await this.saveRetrospective(d);
+    });
+  }
+  referenceConfig(sid) {
+    return sid
+      ? ((this.referenceEdits ||= {})[sid] ||= structuredClone(this.series(sid)?.referenceSettings || {work:"",mode:"plot",brief:""}))
+      : (this.active.seriesReference ||= {work:"",mode:"plot",brief:""});
+  }
+  async referenceSceneAction(action, el) {
+    const sid = el.dataset.series || null;
+    const config = this.referenceConfig(sid);
+    const key = sid || this.active?.id || 'new';
+    const search = ((this.referenceSearches ||= {})[key] ||= {});
+    if (action === 'search-reference-scenes') {
+      await this.job(async () => {
+        if (!config.work?.trim()) throw new Error('先填写参考作品名称，再查找亮点剧情。');
+        this.progress = `正在查找《${config.work}》的日常小桥段，正在筛选并补齐 10 个候选…`;
+        this.render();
+        const result = await ConsoleAPI.request('/console/reference/search', 'POST', {
+          ...this.textConfig(), work:config.work, keywords:search.keywords || '', candidate_count:10,
+        });
+        this.referenceSearches[key] = {...search, ...result};
+      });
+      return;
+    }
+    config.storyline ||= [];
+    const index = Number(el.dataset.index);
+    if (action === 'toggle-reference-scene') {
+      const scene = search.candidates?.find(s => s.id === el.dataset.scene);
+      if (!scene) return;
+      const chosen = config.storyline.findIndex(s => s.id === scene.id);
+      if (chosen >= 0) config.storyline.splice(chosen, 1);
+      else if (config.storyline.length < 24) config.storyline.push(structuredClone(scene));
+      else { this.notify('系列脉络最多保留 24 个片段。'); return; }
+    } else if (Number.isInteger(index) && index >= 0 && index < config.storyline.length) {
+      if (action === 'remove-reference-scene') config.storyline.splice(index, 1);
+      else {
+        const next = index + (action === 'move-reference-up' ? -1 : 1);
+        if (next >= 0 && next < config.storyline.length) [config.storyline[index], config.storyline[next]] = [config.storyline[next], config.storyline[index]];
+      }
+    }
+    config.mode = 'plot';
+    if (!sid) this.changed(this.active);
+    this.render();
+  }
+  async deleteWork(target) {
+    let proposal;
+    await this.job(async () => {
+      await this.store.flushAll();
+      for (const id of this.pendingReviews || []) {
+        if (this.store.drafts[id]) await this.persistReview(this.store.drafts[id]);
+      }
+      this.progress = "正在检查删除范围和后续剧情引用…";
+      this.render();
+      proposal = await ConsoleAPI.request('/console/delete/prepare', 'POST', {
+        target, ...(target.kind === 'chapter' ? this.textConfig() : {}),
+      });
+    });
+    if (!proposal || !await this.confirmDeletion(proposal)) return;
+    await this.job(async () => {
+      this.progress = "正在永久删除内容并清理剧情记忆…";
+      const result = await ConsoleAPI.request('/console/delete/commit', 'POST', {token:proposal.token, confirmed:true});
+      this.store.applyDeletions(result.deletions);
+      this.store.merge(result.drafts || []);
+      this.assistant?.purgeDeleted(result.deletions);
+      for (const id of this.reviewTimers?.keys() || []) {
+        if (!this.store.drafts[id]) {
+          clearTimeout(this.reviewTimers.get(id));
+          this.reviewTimers.delete(id);
+          this.pendingReviews?.delete(id);
+        }
+      }
+      this.active = null;
+      await this.refresh();
+      this.navigate(target.kind === 'series' || !target.series_id ? '#series' : '#series/' + encodeURIComponent(target.series_id));
+      this.notify("已永久删除，后续剧情不会再参考这些内容。");
+    });
+  }
+  confirmDeletion(proposal) {
+    return new Promise(resolve => {
+      const dialog = document.createElement('dialog');
+      dialog.className = 'delete-dialog';
+      dialog.setAttribute('aria-labelledby', 'delete-title');
+      dialog.setAttribute('aria-describedby', 'delete-description');
+      dialog.innerHTML = this.views.deletionConfirmation(proposal);
+      document.body.append(dialog);
+      dialog.addEventListener('close', () => {
+        resolve(dialog.returnValue === 'delete');
+        dialog.remove();
+      }, {once:true});
+      dialog.showModal();
     });
   }
   async job(work) {
@@ -963,6 +1143,7 @@ class UIController {
         ...c,
         idea: [d.seriesBrief, d.idea].filter(Boolean).join("\n"),
         inspiration_reference: d.inspirationReference || "",
+        series_reference: d.seriesId?.startsWith("draft-") ? d.seriesReference : undefined,
         series_id: d.seriesId,
         chapter_count: revise ? 1 : d.chapterCount,
         revision: revise ? d.revisionText : "",
@@ -1116,6 +1297,7 @@ class UIController {
     const config = {
       ...ConsoleAPI.imageConfig(),
       consoleDraftId: d.source ? null : d.mode === "series" ? d.id : null,
+      consoleOwnerDraftId: d.id,
     };
     if (config.imageProvider === "google" && !config.googleApiKey)
       throw new Error("请在创作设置中填写 Google API Key");
@@ -1160,6 +1342,7 @@ class UIController {
               StoryboardImageReconciler.pageFingerprint(page),
           }
         : null;
+      config.consoleOwnerRevision = d.revision;
       const result = await ComicAPI.generateComicImage(
         page,
         await this.sketchData(page),
@@ -1510,6 +1693,8 @@ class UIController {
       {
         ...ConsoleAPI.imageConfig(),
         consoleDraftId: d.source ? null : d.mode === "series" ? d.id : null,
+        consoleOwnerDraftId: d.id,
+        consoleOwnerRevision: d.revision,
       },
       this.source(d),
     );
@@ -1543,7 +1728,7 @@ class UIController {
     this.render();
     d.social = await ComicAPI.generateSocialMediaContent(
       c.api_key,
-      { pages: d.pages },
+      { title: d.title, pages: d.pages },
       c.base_url,
       c.model,
       c.text_provider,

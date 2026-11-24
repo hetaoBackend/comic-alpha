@@ -107,16 +107,24 @@
   // Incremental painting: previously drawn paths are never redrawn per frame.
   function painter(ctx, paths, width, height) {
     const total = paths.reduce((sum, path) => sum + path.length - 1, 0);
-    let index = 0, position = 0, painted = 0;
+    let index = 0, position = 0, completed = 0;
     return progress => {
       const target = total * Math.min(1, Math.max(0, progress));
       let tip = null;
-      while (index < paths.length && painted < target) {
-        const end = Math.min(paths[index].length - 1, position + target - painted);
-        tip = stroke(ctx, paths[index], position, end, width, height);
-        painted += end - position;
-        position = end;
-        if (position >= paths[index].length - 1) { index++; position = 0; }
+      while (index < paths.length) {
+        const path = paths[index];
+        const length = path.length - 1;
+        const end = Math.min(length, target - completed);
+        if (end <= position) break;
+        tip = stroke(ctx, path, position, end, width, height);
+        // Each iteration finishes a path or yields until the next frame.
+        if (end < length) {
+          position = end;
+          break;
+        }
+        completed += length;
+        index++;
+        position = 0;
       }
       return tip;
     };
