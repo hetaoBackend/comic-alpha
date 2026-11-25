@@ -18,13 +18,15 @@ def main():
     shutil.rmtree(STAGE, ignore_errors=True)
     STAGE.mkdir(parents=True)
     store_build = '--app-store' in sys.argv
+    public_build = store_build or '--public' in sys.argv
     for name in ('index.html', 'frontend', 'assets'):
-        # Store distribution has no license to redistribute character references
-        # or the example comics. Keep the originals in the author's workspace.
-        if store_build and name == 'assets':
+        # Store and website distribution have no license to redistribute
+        # character references or the example comics. Keep the originals in the
+        # author's workspace.
+        if public_build and name == 'assets':
             (STAGE / 'assets/refer_image').mkdir(parents=True)
             # Product branding is owned by this app, unlike bundled comic and
-            # character references excluded from the Store distribution.
+            # character references excluded from public distribution.
             if (ROOT / 'assets/brand').is_dir():
                 shutil.copytree(ROOT / 'assets/brand', STAGE / 'assets/brand')
             continue

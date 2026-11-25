@@ -31,9 +31,9 @@ npm run desktop:dist   # 生成 DMG 和 ZIP
 
 打包脚本先用 PyInstaller 收集后端及依赖，再用 Electron Builder 生成应用。应用构建于 `~/Library/Caches/ComicPerfect/build/`，避免 iCloud 同步元数据导致签名失败；DMG 和 ZIP 完成后复制到项目 `dist/`。Apple Silicon 和 Intel 需分别在相应架构环境构建，不能用当前架构的 Python 服务直接生成另一架构安装包。
 
-默认使用 ad-hoc 本地签名，不会自动选择电脑上的开发者证书。正式分发需用 Electron Builder 的 `-c.mac.identity="Developer ID Application: …"` 覆盖签名身份，并配置开发者自己的 CSC_*、APPLE_* 签名和公证环境变量。默认输出供本地验证的未公证应用。
+默认使用 ad-hoc 本地签名，不会自动选择电脑上的开发者证书。默认输出供本地验证的未公证应用。供他人下载的安装包使用官网分发流程：`npm run desktop:release` 以 Developer ID Application 签名并经 Apple 公证，安装启动验证通过后才记录为可发布；`npm run desktop:release:publish` 核对哈希后发布到 GitHub Release。需要 `APPLE_KEYCHAIN_PROFILE` 指向已有的 notarytool 钥匙串配置，详见 [官网分发](../docs/direct-distribution.md)。
 
-Mac App Store 使用独立的 `appstore:check`、`appstore:dev` 和 `appstore:release` 流程，详见 [商店发布记录](../docs/app-store/README.md)。商店构建排除第三方角色参考图和示例漫画，普通本地构建保留原有资源。商店版使用无监听端口的进程间通信、系统文件夹授权和加密凭据，Codex 登录从菜单主动连接。商店版最低 macOS 15，当前仅 Apple Silicon；实际提交状态以发布记录为准。
+Mac App Store 使用独立的 `appstore:check`、`appstore:dev` 和 `appstore:release` 流程，详见 [商店发布记录](../docs/app-store/README.md)。商店构建与官网构建都排除第三方角色参考图和示例漫画，普通本地构建保留原有资源。商店版使用无监听端口的进程间通信、系统文件夹授权和加密凭据，Codex 登录从菜单主动连接。商店版最低 macOS 15，当前仅 Apple Silicon；实际提交状态以发布记录为准。
 
 ## 数据与现有创作空间
 
