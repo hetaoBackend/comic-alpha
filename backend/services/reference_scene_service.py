@@ -163,7 +163,7 @@ class ReferenceSceneService:
 选材单位是“一件小事中的一个局部笑点”，不是整集梗概、完整人物成长或多场戏的大事件。优先一两个相邻场所、连续短时间、少量人物围绕一个道具或眼前小目标，有2—3个相连的喜剧节拍和局部收尾；脱离整集前情也能看懂，适合一篇短漫画。不要过度缩成单个表情、单次招式或口头禅。可以从一集中抽取局部，不要概括整集。中秋月饼这样的日常小物件、围绕吃东西/分东西/借还/买卖/小面子展开的一场小波折是尺度示例，不能据此编造原作剧情，也不限定所有作品都找月饼。
 排除“闯江湖—误入客栈—打斗—赔偿—留下打杂”这类长链条；排除靠长篇抽象辩论或大量台词才能成立的场面。不能只把长故事压缩成短介绍，必须换选一个确实独立的小动作/小误会。提交前逐项审查片段尺度，scope 标明审查结果，只提交 local_moment。
 按 candidate_count 给足不同候选。already_adapted、accepted_candidates 和 rejected_candidates 中出现的同一事件不要换说法重复。优先跨集、跨道具、跨互动寻找，优先日常生活的具体小波折，避免反复出招、点穴等雷同片段；避免十个候选全取自同一集；只选择能具体说明的原作片段，不能编造集数、对白或剧情来凑数。确实不足时返回可靠部分并用 shortageReason 简短说明。
-文字精炼：title 最多24字；reference 最多65字，一句话交代小事与反转；mechanism 最多35字；adaptationHint 最多45字，只说适合转成哪种漫画小任务，不写完整新剧情。sourceScene 的 characters 最多60字，setup/choice/result 各最多80字，保留原作具体人物、处境、动作与结果，不用泛化机制替代事实。
+文字精炼：title 最多24字；reference 最多65字，一句话交代小事与反转；mechanism 最多35字，点明原作靠什么好笑：谁出手让局面倒转、谁被自己的什么反噬；adaptationHint 最多45字，只说适合转成哪种漫画小任务，不写完整新剧情。sourceScene 的 characters 最多60字，setup/choice/result 各最多80字，保留原作具体人物、处境、动作与结果，不用泛化机制替代事实。
 仅在公开资料（包括分集简介）中选择真正支持本片段的 sourceIds，不输出网址；摘要不足以证实细节，不能标为已核实。无支持来源但能凭记忆说明时 sourceIds=[]，无法确定的片段省略。
 输出 {candidates:[{title,reference,mechanism,adaptationHint,scope:{unit:"local_moment",locations:1,timeJumps:0,requiresEpisodeContext:false,dialogueHeavy:false},sourceScene:{characters,setup,choice,result},sourceIds:["S1"]}],shortageReason:""}。'''
         source_map = {s['id']:s for s in sources}
@@ -272,8 +272,34 @@ class ReferenceSceneService:
         return used
 
     @classmethod
-    def select(cls, requirements, docs, count, previous=None, series_id=None):
+    def match_text(cls, text, scenes):
+        """Resolve free text that names a planned scene, such as its title.
+
+        A clear single winner is required; vague text leaves the queue in order.
+        """
+        def grams(value):
+            compact = re.sub(r'[^\w]', '', value)
+            return {compact[i:i + 2] for i in range(len(compact) - 1)}
+        wanted = grams(text)
+        scores = sorted(((len(wanted & grams(scene['title'] + scene.get('reference', ''))), scene['id'], scene) for scene in scenes), reverse=True, key=lambda item: (item[0], item[1]))
+        best = scores[0] if scores else (0, '', None)
+        second = scores[1][0] if len(scores) > 1 else 0
+        return best[2] if best[0] >= 6 and best[0] > second * 1.5 else None
+
+    @classmethod
+    def select(cls, requirements, docs, count, previous=None, series_id=None, chosen=None, automatic=False):
         storyline = next((r.get('storyline') for r in requirements if r.get('storyline')), [])
+        from services.deletion_service import DeletionService
+        skipped = {s['referenceId'] for s in DeletionService.state().get('referenceIds', []) if s['seriesId'] == series_id}
+        # Scenes the creator picked for this plan come first and keep their order;
+        # the remaining chapters continue along the unused storyline.
+        if chosen:
+            by_id = {scene['id']: scene for scene in storyline}
+            if any(scene_id not in by_id for scene_id in chosen):
+                raise ComicBrainValidationError('所选的参考片段不在当前系列脉络中，请重新选择')
+            unused = [scene for scene in storyline if scene['id'] not in cls.used_ids(docs) | skipped]
+            rest = [scene for scene in unused if scene['id'] not in set(chosen)]
+            return [by_id[scene_id] for scene_id in chosen] + rest[:max(0, count - len(chosen))]
         # A revision keeps the selected scene instead of consuming the next one.
         if previous:
             prior_ids = [(c.get('inspiration') or {}).get('referenceId') for c in previous if isinstance(c, dict)]
@@ -295,9 +321,7 @@ class ReferenceSceneService:
                     pass
             if matched:
                 return matched[:count]
-        if not storyline:
+        if automatic or not storyline:
             return []
-        from services.deletion_service import DeletionService
-        skipped = {s['referenceId'] for s in DeletionService.state().get('referenceIds', []) if s['seriesId'] == series_id}
         unused = [s for s in storyline if s['id'] not in cls.used_ids(docs) | skipped]
         return unused[:count]

@@ -101,6 +101,8 @@ Modular JavaScript with classes exposed on `window`:
   - `openai` uses GPT Image-compatible APIs and requires `api_key`
   - `codex` uses local Codex credentials and is restricted to localhost requests
 - Script generation uses Pydantic models (`ComicScript`, `ComicPage`, `Row`, `Panel`) for structured output
+- Series plot planning (`ConsoleService.plan`) writes each chapter as 起承转合 plus a conflict engine and, when adapting, a source beat map. A writer pass drafts; a review pass applies every creative rule and flags structural problems; one repair pass fixes flagged chapters. Legacy three-beat drafts stay editable
+- The 设计剧情 step picks reference scenes from the series storyline (`reference_scene_mode`, `reference_scene_ids`); the storyline itself is managed under the series 参考与脉络 tab
 - Frontend stores sessions, configs, and generated images in localStorage
 - Backend saves generated images to `backend/static/images/`
 - Local character references live in `assets/refer_image/<style>/`. Filenames are always valid reference names; optional `characters.json` files add aliases, display names, and role hints.
@@ -139,4 +141,11 @@ Modular JavaScript with classes exposed on `window`:
   - `CODEX_MAX_PREVIOUS_PAGE_REFERENCES` defaults to `2`
   - `CODEX_MAX_COVER_PAGE_REFERENCES` defaults to `4`
   - `CODEX_REFERENCE_MAX_SIDE` defaults to `768`
+- Website downloads use `npm run desktop:release`, then `desktop:release:publish`
+  and `desktop:release:site` (Developer ID signing, Apple notarization, startup
+  verification, then a GitHub Release). See `docs/direct-distribution.md`.
+  Notarization needs an unlocked Mac and `APPLE_KEYCHAIN_PROFILE`; never
+  distribute a build whose `release.json` is not `ready`. Website builds stage
+  the same public asset set as the store build (no third-party character
+  references) and declare the lowest macOS the bundled native code can load.
 - Supports comic styles: doraemon, american, watercolor, disney, ghibli, pixar, shonen, nezha, langlangshan

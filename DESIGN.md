@@ -90,13 +90,13 @@ The creator selected “像创作软件一样，作品在中间、工具在两�
 
 Cool neutral surroundings and white working paper keep real comic artwork prominent. Compact Chinese typography, restrained teal actions and fine borders give the interface the density of a creation tool. The visual source of truth is frontend/css/studio.css loaded after frontend/css/style.css; view composition and tool relocation live in frontend/js/consoleViews.js, app.js, workspaceUI.js and creativeAssistant.js.
 
-**Key Characteristics:**
+**Key Characteristics (revised 2026-11-24 at the creator's request):**
 
 - Authored work stays central; navigation and contextual tools frame it.
 - Cool neutral studio surfaces, white paper and restrained teal actions.
 - Compact controls, clear artifact stages and quiet status labels.
 - Real workspace artwork and preserved versions supply the imagery.
-- Parameters remain reachable when the assistant occupies the tool area.
+- Parameters sit inline beside the work; one primary action per screen.
 
 The refreshed record is based on final sources and desktop, editor, series, workspace, settings, 1067px, mobile and assistant-parameter screenshots in .impeccable/review/. Both findings in the scoped finish review were resolved; the reviewer’s scoped verdict is ship. This record does not claim full runtime accessibility verification.
 
@@ -110,15 +110,15 @@ The local UX Chinese font, with the existing system fallbacks, remains the share
 
 ## Layout
 
-The desktop shell has a sticky full-height left sidebar (196px), toolbar (56px), and centered main area capped at 1400px with 28px padding. Editor and series detail views use a flexible central paper beside a contextual inspector (232px) with a 24px gap. The editor paper has 28px padding and a sticky bottom action strip. Home uses a resume panel, compact recent-work rows, a right creation-tool column (244px), and horizontal artwork cards for series. Settings form one grouped white surface capped at 880px; workspace management is capped at 900px.
+The desktop shell has a sticky full-height left sidebar (196px), toolbar (56px), and centered main area capped at 1400px with 28px padding. Editor and series detail views use one working column: text steps cap the paper at 960px and the comic output uses the full width. The editor paper has 28px padding and a sticky bottom action strip. There is no separate inspector; every control sits with the work it changes. Home uses a resume panel, compact recent-work rows, a right creation-tool column (244px), and horizontal artwork cards for series. Settings form one grouped white surface capped at 880px; workspace management is capped at 900px.
 
 **The Central Work Rule.** Let the authored story or comic be the dominant working surface; side areas support the current task.
 
-At widths up to 1150px the sidebar becomes 180px, main padding 24px, and the inspector 210px with a 20px gap. At 761–959px it becomes a 68px navigation rail with icons and small labels; recent series disappear and the inspector uses 200px. Settings and workspace identity remain reachable.
+At widths up to 1150px the sidebar becomes 180px and main padding 24px. At 761–959px it becomes a 68px navigation rail with icons and small labels and recent series disappear. Settings and workspace identity remain reachable.
 
 At 760px and below navigation moves to a wrapping top header; settings and workspace share the identity row, with the main destinations below. The toolbar reduces to 48px, main padding becomes 22px 16px, and editor, detail and principle layouts stack. The editor paper uses 20px padding, output becomes one column, home series cards stack, and the general series gallery retains two columns. Creation tools follow the main work.
 
-The assistant docks at the right (350px). At 960px and above an open assistant reserves that width in the shell, collapses editor/detail to one column and hides their inspector; home hides its right tools. Below 960px the assistant overlays rather than reserving shell width. At 760px and below its width is min(420px, 100vw). Its modal role, focus containment and background inertness currently activate at 600px and below, a separate behavior threshold from the 760px visual layout.
+The assistant docks at the right (350px). At 960px and above an open assistant reserves that width in the shell and narrows the working column; home hides its right tools. Below 960px the assistant overlays rather than reserving shell width. At 760px and below its width is min(420px, 100vw). Its modal role, focus containment and background inertness currently activate at 600px and below, a separate behavior threshold from the 760px visual layout.
 
 ## Elevation & Depth
 
@@ -136,17 +136,15 @@ Buttons are compact and explicit: standard actions have a 36px minimum height, 1
 
 Inputs use a 38px minimum height, 13px text, 8px 11px padding, a quiet field border and 6px corners. Text areas use comfortable line spacing (1.8) and padding. Focus turns the border teal with a 2px tint outline and a 1px offset; existing focus-visible selectors provide the stronger keyboard indication.
 
-Navigation uses small outline SVG icons, compact labels and a tinted selected row. Sidebar destinations are at least 42px tall; recent series are 36px. The bottom identity area contains one workspace entry beneath settings, with current folder name and “选择或切换空间”. Do not add a duplicate identity card. Mobile retains all main destinations with compact labels.
+Navigation uses small outline SVG icons, compact labels and a tinted selected row. Sidebar destinations are at least 42px tall; recent series are 36px. The bottom identity area contains 创作原则 and 创作设置 as secondary destinations above one workspace entry, with current folder name and “选择或切换空间”. Do not add a duplicate identity card. Mobile retains all main destinations with compact labels.
 
-The editor stage strip wraps compact steps on a neutral green-gray track; the current step is white with teal text. Story adjustment, storyboard confirmation and image generation remain distinct. The central paper contains content and a sticky next-action strip; creation tools use unboxed sections and horizontal separators on the right.
+The editor stage strip wraps compact steps on a neutral green-gray track; the current step is white with teal text. An established series starts at 设计剧情 (four steps); only a new series begins with 系列设定. Story adjustment, storyboard confirmation and image generation remain distinct. The central paper contains content and a sticky next-action strip. 设计剧情 opens with the reference-scene picker (按脉络顺序 / 我来选 / AI 自动选段). 调整剧情 shows the source scene and where its reversal landed, the story skeleton with a highlighted 反转 block, then the four beats 起、承、转、合. Rule applications collapse at the end of the step. Each screen has one primary action: rare or destructive actions use quiet text buttons, the ⋯ menu in the editor header, or the danger zone at the end of 创作记录.
 
-**The Reachable Parameters Rule.** Moving tools must preserve access: page count and style move into the central disclosure when the assistant opens or the viewport is mobile.
-
-On initial idea entry, page count or chapter count and style normally appear in the inspector. Opening the assistant at any width, or entering the mobile layout, moves those same fields into the central generation-settings disclosure; its label names page count, style and more settings. Closing the assistant on desktop returns fields to the inspector. Language, layout and references stay in the disclosure. This preserves state and one copy of each field.
+**The Inline Parameters Rule.** Page or chapter count and style live in a compact row inside the working paper at every width. Language, rows per page, pages per chapter and the reference image stay in the 更多设置 disclosure directly below. Opening the assistant or changing the viewport moves nothing, so state and a single copy of each field are preserved by construction.
 
 The assistant keeps target and impact scope above the scrollable thread and the instruction composer at its bottom. Discussion and concrete edits remain separate; proposals show before/after text with adoption and keep-original actions. Draft edits offer undo. The global toolbar and contextual entries use the same button system.
 
-Recent work uses thumbnail-led rows, quiet state badges and small metadata. Series detail keeps each chapter in one row with story, storyboard and image progress; grouped documents use purpose-titled disclosures. Settings autosave visibly and retain a return path. Workspace management explains ownership, location and platform availability in readable grouped sections. Error, loading and disconnected states provide concrete recovery actions while preserving completed work.
+Recent work uses thumbnail-led rows, quiet state badges and small metadata, without per-row delete buttons. Series detail keeps each chapter in one row with story, storyboard and image progress; its tabs are 章节与漫画, 人物设定, 参考与脉络 (reference work, 亮点剧情 discovery and the ordered storyline), 系列资料 and 创作记录; grouped documents use purpose-titled disclosures. Settings autosave visibly and retain a return path. Workspace management explains ownership, location and platform availability in readable grouped sections. Error, loading and disconnected states provide concrete recovery actions while preserving completed work.
 
 ## Do's and Don'ts
 
@@ -154,7 +152,7 @@ Recent work uses thumbnail-led rows, quiet state badges and small metadata. Seri
 
 - Do keep the authored canvas central and reserve side areas for navigation and contextual tools.
 - Do preserve settings and workspace access in the full sidebar, compact rail and mobile header.
-- Do relocate page count and style into the central generation-settings disclosure when the assistant opens or the viewport is mobile.
+- Do keep generation parameters inline in the working paper and show the reversal of a story before its beats.
 - Do use real workspace artwork, readable empty states and preserved image versions.
 - Do distinguish story editing, storyboard confirmation and image generation with explicit next actions.
 - Do retain visible focus, readable wrapping, status feedback and reduced-motion support.
@@ -163,6 +161,6 @@ Recent work uses thumbnail-led rows, quiet state badges and small metadata. Seri
 
 - Don’t restore the superseded HTML reference as visual authority.
 - Don’t enlarge routine controls into promotional cards or add decorative artwork to the studio chrome.
-- Don’t hide generation parameters merely because the right inspector is hidden.
+- Don’t reintroduce a side inspector, duplicate the primary action on one screen, or place a destructive button beside a primary one.
 - Don’t duplicate the workspace identity into a second sidebar card.
 - Don’t hide historical images when a story changes or present prototype examples as real work.

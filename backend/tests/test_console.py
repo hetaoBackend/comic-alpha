@@ -14,6 +14,21 @@ from services.console_service import ConsoleService, atomic_json
 from services.canon_service import CanonService
 from services.comicbrain_project_service import ComicBrainConflictError, ComicBrainValidationError
 
+ENGINE = {'desire': '主角想保住面子', 'obstacle': '朋友坚持把话说清楚', 'choice': '主角当众撒谎，退不回去',
+          'escalation': '同学开始替主角干活，知情的人变多',
+          'turn': {'by': '朋友', 'how': '顺着谎言把主角当外人对待', 'result': '主角被自己的谎言困住'}, 'payoff': '主角补做全部值日'}
+BEAT_MAP = [{'source': '原作处境', 'ours': '起：主角想偷懒', 'kept': '保留', 'note': ''},
+            {'source': '原作选择', 'ours': '转：旁人将计就计', 'kept': '保留', 'note': ''},
+            {'source': '原作后果', 'ours': '合：主角自食其果', 'kept': '保留', 'note': ''}]
+
+def planned(title='下一话', **extra):
+    return {'title': title, 'beats': ['起', '承', '转', '合'], 'engine': copy.deepcopy(ENGINE), **extra}
+
+def reviewed(rules, count=1):
+    """A passing editorial review; acceptable as every model reply at once."""
+    return {'chapters': [planned() for _ in range(count)], 'reviews': [{'index': i, 'verdict': 'pass', 'issues': []} for i in range(count)], 'ruleApplications': list(rules)}
+
+
 class ConsoleTest(unittest.TestCase):
     def setUp(self):
         self.temporary=tempfile.TemporaryDirectory()
@@ -77,11 +92,73 @@ class ConsoleTest(unittest.TestCase):
         data={'idea':'下一话','chapter_count':1,'series_id':'test'}
         with patch.object(ConsoleService,'ask',return_value={'chapters':[]}):
             with self.assertRaises(ComicBrainValidationError):ConsoleService.plan(data)
-        result={'chapters':[{'title':'下一话','beats':['开场','选择','代价']}], 'ruleApplications':[{'documentId':'01-故事','rule':'故事原则','status':'采用','reason':'主角主动选择'}]}
+        result=reviewed([{'documentId':'01-故事','rule':'故事原则','status':'采用','reason':'朋友在第三拍将计就计'}])
         with patch.object(ConsoleService,'ask',return_value=result) as model:
             plan=ConsoleService.plan(data)
             self.assertTrue(plan['contextHash'])
-            self.assertIn('故事原则',model.call_args.args[2])
+            # The writer gets the series rules first; the review is a separate later pass.
+            self.assertEqual(model.call_count,2)
+            self.assertIn('故事原则',model.call_args_list[0].args[2])
+            self.assertIn('起承转合',model.call_args_list[0].args[1])
+            self.assertEqual(plan['qualityReview'],[{'chapter':1,'issues':[],'revised':False}])
+
+    def test_plan_requires_four_beats_a_reversal_and_a_full_review(self):
+        rules=[{'documentId':'01-故事','status':'采用','reason':'朋友在第三拍将计就计'}]
+        # Three beats, a turn nobody initiates, or a missing engine never reach the review.
+        for chapter in [planned() | {'beats': ['开场', '发展', '收束']}, planned() | {'engine': {**ENGINE, 'turn': {}}},
+                        {'title': '没有冲突引擎', 'beats': ['起', '承', '转', '合']}]:
+            result=reviewed(rules); result['chapters']=[chapter]
+            with self.subTest(chapter=chapter), patch.object(ConsoleService,'ask',return_value=result) as model:
+                with self.assertRaises(ComicBrainValidationError): ConsoleService.plan({'series_id':'test'})
+                self.assertEqual(model.call_count,2)
+        # A draft that passes the writer is reviewed; an incomplete review is asked for once more.
+        for broken in [{'reviews': []}, {'reviews': [{'index': 0, 'verdict': 'revise', 'issues': []}]},
+                       {'reviews': [{'index': 1, 'verdict': 'pass', 'issues': []}]}, {'ruleApplications': []}]:
+            result=reviewed(rules); result.update(broken)
+            with self.subTest(broken=broken), patch.object(ConsoleService,'ask',return_value=result) as model:
+                with self.assertRaises(ComicBrainValidationError): ConsoleService.plan({'series_id':'test'})
+                self.assertEqual(model.call_count,3)
+
+    def test_editorial_issues_are_repaired_once_and_recorded(self):
+        rules=[{'documentId':'01-故事','rule':'故事原则','status':'采用','reason':'起拍'}]
+        flat=reviewed(rules); flat['chapters']=[planned('平淡版')]
+        issues=[{'kind':'缺反转','detail':'第三拍哪吒自己想通并认错','fix':'让清妍和敖丙将计就计，顺着装病把他当外人'}]
+        flagged={**flat,'reviews':[{'index':0,'verdict':'revise','issues':issues}]}
+        stronger=reviewed([{**rules[0],'reason':'第三拍由清妍发动反转'}]); stronger['chapters']=[planned('有反转版')]
+        with patch.object(ConsoleService,'ask',side_effect=[flat,flagged,stronger]) as model:
+            plan=ConsoleService.plan({'series_id':'test'})
+        self.assertEqual(model.call_count,3)
+        self.assertEqual(plan['chapters'][0]['title'],'有反转版')
+        self.assertEqual(plan['ruleApplications'][0]['reason'],'第三拍由清妍发动反转')
+        self.assertEqual(plan['qualityReview'],[{'chapter':1,'issues':issues,'revised':True}])
+        repair=json.loads(model.call_args_list[2].args[2])
+        self.assertEqual(repair['review'][0]['issues'],issues)
+        self.assertEqual(repair['ruleApplications'],rules)
+        # A draft that passes review is returned exactly as written.
+        with patch.object(ConsoleService,'ask',return_value=flat) as model:
+            self.assertEqual(ConsoleService.plan({'series_id':'test'})['chapters'][0]['title'],'平淡版')
+        self.assertEqual(model.call_count,2)
+
+    def test_unfixable_draft_keeps_the_reviewed_story_and_its_issues(self):
+        rules=[{'documentId':'01-故事','status':'采用','reason':'起拍'}]
+        flat=reviewed(rules); flat['chapters']=[planned('平淡版')]
+        issues=[{'kind':'升级不足','detail':'第二拍代价没有变化','fix':'让更多同学替他值日'}]
+        flagged={**flat,'reviews':[{'index':0,'verdict':'revise','issues':issues}]}
+        with patch.object(ConsoleService,'ask',side_effect=[flat,flagged,{'chapters':[]}]) as model:
+            plan=ConsoleService.plan({'series_id':'test'})
+        self.assertEqual(model.call_count,3)
+        self.assertEqual(plan['chapters'][0]['title'],'平淡版')
+        self.assertEqual(plan['ruleApplications'],rules)
+        self.assertEqual(plan['qualityReview'],[{'chapter':1,'issues':issues,'revised':False}])
+
+    def test_revision_rechecks_the_reversal_and_passes_it_to_the_review(self):
+        rules=[{'documentId':'01-故事','status':'采用','reason':'起拍'}]
+        with patch.object(ConsoleService,'ask',return_value=reviewed(rules)) as model:
+            ConsoleService.plan({'series_id':'test','revision':'清妍撞到哪吒，哪吒装脑震荡','previous':[planned()]})
+        self.assertIn('重新检查四拍',model.call_args_list[0].args[1])
+        for sent in model.call_args_list:
+            self.assertEqual(json.loads(sent.args[2])['revision'],'清妍撞到哪吒，哪吒装脑震荡')
+        self.assertEqual(json.loads(model.call_args_list[1].args[2])['revision'],'清妍撞到哪吒，哪吒装脑震荡')
 
     def proposal(self):
         d=self.save()
@@ -93,14 +170,14 @@ class ConsoleTest(unittest.TestCase):
     def test_next_chapter_can_be_designed_without_user_idea_and_reads_series_rules(self):
         (self.series/'05-系列偏好.md').write_text('# 系列偏好\n从《武林外传》选小片段学习冲突机制。')
         (self.series/'04-当前状态.md').write_text('# 当前状态\n主角刚偿还了朋友的人情。')
-        result={'chapters':[{'title':'下一话','beats':['开场','选择','代价']}], 'ruleApplications':[
+        result=reviewed([
             {'documentId':'01-故事','status':'采用','reason':'主角选择有后果'},
-            {'documentId':'05-系列偏好','status':'采用','reason':'以头衔与责任的错位制造冲突'}]}
+            {'documentId':'05-系列偏好','status':'采用','reason':'以头衔与责任的错位制造冲突'}])
         before={str(p):p.read_bytes() for p in (self.root/'wiki').rglob('*.md')}
         with patch.object(ConsoleService,'ask',return_value=result) as model:
             response=self.client.post('/api/console/plan',json={'series_id':'test','chapter_count':1},headers=self.headers)
         self.assertEqual(response.status_code,200,response.get_json())
-        payload=json.loads(model.call_args.args[2])
+        payload=json.loads(model.call_args_list[0].args[2])
         self.assertEqual(payload['planning_mode'],'automatic')
         self.assertEqual(payload['idea'],'')
         self.assertIn('武林外传',json.dumps(payload['context'],ensure_ascii=False))
@@ -109,14 +186,15 @@ class ConsoleTest(unittest.TestCase):
 
     def test_explicit_classic_reference_is_sent_and_adaptation_is_returned(self):
         inspiration={'work':'武林外传','reference':'测试片段，不作原作事实断言','mechanism':'权力与责任错位','adaptation':'主角抢到值日队长，却必须自己收拾残局','sourceStatus':'模型记忆待核实', 'sourceScene': {'characters':'原作人物','setup':'原作处境','choice':'原作选择','result':'原作结果'}}
-        result={'chapters':[{'title':'队长只有一天','beats':['抢头衔','推责任','收拾残局'],'inspiration':inspiration}], 'ruleApplications':[{'documentId':'01-故事','status':'采用','reason':'主动选择带来代价'}]}
+        result=reviewed([{'documentId':'01-故事','status':'采用','reason':'主动选择带来代价'}])
+        result['chapters']=[planned('队长只有一天',inspiration=inspiration)]
         with patch.object(ConsoleService,'ask',return_value=result) as model:
             plan=ConsoleService.plan({'series_id':'test','idea':'主角争当队长','inspiration_reference':'武林外传','chapter_count':1})
-        payload=json.loads(model.call_args.args[2])
+        payload=json.loads(model.call_args_list[0].args[2])
         self.assertEqual(payload['planning_mode'],'directed')
         self.assertEqual(payload['inspiration_reference'],'武林外传')
         self.assertEqual(plan['chapters'][0]['inspiration'],inspiration)
-        self.assertIn('不编造集数',model.call_args.args[1])
+        self.assertIn('不编造集数',model.call_args_list[0].args[1])
         del result['chapters'][0]['inspiration']
         with patch.object(ConsoleService,'ask',return_value=result):
             with self.assertRaises(ComicBrainValidationError):
@@ -128,13 +206,13 @@ class ConsoleTest(unittest.TestCase):
             f'| PREF-002 | 标杆使用 | 从《武林外传》选小片段学习情景喜剧机制，再改写任务和选择 | {status} |\n')
 
     def reference_plan(self):
-        return {'chapters': [{'title': '新故事', 'beats': ['起', '承', '果'], 'inspiration': {
-            'work': '武林外传', 'reference': '测试片段，不作原作事实断言', 'mechanism': '测试冲突',
-            'adaptation': '转化为新任务', 'sourceStatus': '模型记忆待核实',
-            'sourceScene': {'characters': '原作人物', 'setup': '原作处境', 'choice': '原作选择', 'result': '原作后果'}}}],
-            'ruleApplications': [
+        return reviewed([
                 {'documentId': '01-故事', 'status': '采用', 'reason': '主动选择'},
-                {'documentId': '05-系列偏好', 'status': '采用', 'reason': '选原作片段再改写'}]}
+                {'documentId': '05-系列偏好', 'status': '采用', 'reason': '选原作片段再改写'}]) | {
+            'chapters': [planned('新故事', inspiration={
+                'work': '武林外传', 'reference': '测试片段，不作原作事实断言', 'mechanism': '测试冲突',
+                'adaptation': '转化为新任务', 'sourceStatus': '模型记忆待核实', 'beatMap': copy.deepcopy(BEAT_MAP),
+                'sourceScene': {'characters': '原作人物', 'setup': '原作处境', 'choice': '原作选择', 'result': '原作后果'}})]}
 
     def test_inherited_reference_rejects_missing_or_mechanism_only_even_when_rule_claims_adopted(self):
         self.reference_preference()
@@ -154,7 +232,7 @@ class ConsoleTest(unittest.TestCase):
         self.assertEqual(requirement['works'], ['武林外传'])
         self.assertTrue(requirement['specificScene'])
         result = self.reference_plan()
-        result['chapters'].append({'title': '第二话', 'beats': ['起', '承', '果']})
+        result['chapters'].append(planned('第二话'))
         with patch.object(ConsoleService, 'ask', return_value=result):
             with self.assertRaises(ComicBrainValidationError): ConsoleService.plan({'series_id': 'test', 'chapter_count': 2})
 
@@ -178,16 +256,20 @@ class ConsoleTest(unittest.TestCase):
         self.assertIn('sourceScene', model.call_args.args[0])
 
     def test_automatic_planning_requires_series_context_and_valid_reference(self):
-        for data in [{'idea':''},{'series_id':'draft-new','idea':''}, {'series_id':'test','inspiration_reference':[]}, {'series_id':'test','inspiration_reference':'x'*4001}]:
+        for data in [{'idea':''},{'series_id':'draft-new','idea':''}, {'series_id':'test','inspiration_reference':[]}, {'series_id':'test','inspiration_reference':'x'*4001},
+                    {'series_id':'test','reference_scene_mode':'anything'}, {'series_id':'test','reference_scene_ids':['not-a-scene']}, {'series_id':'test','reference_scene_ids':['a'*24,'a'*24]}]:
             with patch.object(ConsoleService,'ask') as model:
                 with self.assertRaises(ComicBrainValidationError):ConsoleService.plan(data)
                 model.assert_not_called()
 
     def test_new_empty_workspace_can_plan_first_series_without_inventing_rules(self):
         (self.root/'wiki/创作原则/01-故事.md').unlink()
-        result={'chapters':[{'title':'第一话','beats':['开场','选择','代价']}], 'ruleApplications':[]}
-        with patch.object(ConsoleService,'ask',return_value=result):
+        result=reviewed([])
+        result['chapters']=[planned('第一话')]
+        with patch.object(ConsoleService,'ask',return_value=result) as model:
             plan=ConsoleService.plan({'series_id':'draft-first','idea':'一群熟人在小馆里解决生活麻烦。'})
+        self.assertEqual(model.call_count,2)
+        self.assertIn('剧情审稿',model.call_args_list[1].args[1])
         self.assertEqual(plan['ruleApplications'],[])
         self.assertTrue(plan['contextHash'])
 
@@ -290,6 +372,26 @@ class ConsoleTest(unittest.TestCase):
             result=CanonService.save({'draft_id':d['id'],'revision':d['revision']})
         self.assertEqual(result['draft']['canonChapters']['0']['chapterId'],'ch001')
         self.assertEqual(len(list(self.series.glob('剧情/*/*/01-漫画脚本.md'))),1)
+
+    def test_saving_a_four_beat_chapter_records_its_reversal_on_the_chapter_card(self):
+        self.valid_workspace()
+        self.draft.update(coverBrief='独立封面', seriesId='test')
+        self.draft['chapters'] = [planned(inspiration={
+            'work': '武林外传', 'reference': '测试片段', 'mechanism': '旁人反将一军', 'adaptation': '朋友将计就计', 'sourceStatus': '模型记忆待核实',
+            'referenceId': 'a' * 24, 'beatMap': copy.deepcopy(BEAT_MAP),
+            'sourceScene': {'characters': '原作人物', 'setup': '原作处境', 'choice': '原作选择', 'result': '原作后果'}})]
+        d = self.save()
+        with patch.object(ConsoleService, 'ask', return_value=self.compact_result()):
+            saved = CanonService.save({'draft_id': d['id'], 'revision': d['revision']})['draft']
+        card = (self.series / '剧情/卷-001/章节-001/00-章节卡.md').read_text(encoding='utf-8')
+        # Later episodes vary who turns the tables, so the reversal is story memory.
+        self.assertIn('## 本话冲突引擎', card)
+        self.assertIn('- 反转发动者：朋友', card)
+        self.assertIn('- 反转办法：顺着谎言把主角当外人对待', card)
+        self.assertIn('- 脉络片段 ID：' + 'a' * 24, card)
+        self.assertEqual(saved['canonChapters']['0']['chapterId'], 'ch001')
+        # A three-beat draft saved before 起承转合 has no engine to record.
+        self.assertNotIn('## 本话冲突引擎', (self.series / '剧情/卷-001/章节-001/01-漫画脚本.md').read_text(encoding='utf-8'))
 
     def test_new_series_save_keeps_creator_brief_and_initial_chapter(self):
         self.valid_workspace()

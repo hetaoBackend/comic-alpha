@@ -52,7 +52,7 @@ class SeriesMemoryService:
         index = draft.get('chapterIndex', 0)
         chapter = (draft.get('chapters') or [])[index] if 0 <= index < len(draft.get('chapters') or []) else {}
         original = chapter.get('aiOriginal') or {}
-        plot = [{"field": k, "before": original.get(k), "after": chapter.get(k)} for k in ['title', 'summary', 'beats', 'cover'] if k in original and original.get(k) != chapter.get(k)]
+        plot = [{"field": k, "before": original.get(k), "after": chapter.get(k)} for k in ['title', 'summary', 'beats', 'engine', 'cover'] if k in original and original.get(k) != chapter.get(k)]
         baseline = draft.get('aiPages')
         if baseline is None:
             baseline = (draft.get('source') or {}).get('metadata', {}).get('pages')
@@ -235,6 +235,15 @@ updates仅同步确实受影响的当前人物/关系/世界状态、时间线/�
                     ('mechanism', '借鉴机制'), ('adaptation', '本话改编')])
             if isinstance(inspiration.get('sourceScene'), dict):
                 card_body += '\n- 原作片段：' + json.dumps(inspiration['sourceScene'], ensure_ascii=False)
+        # Who turned the tables is story memory: later episodes vary the roles.
+        engine = chapters[index].get('engine') if 0 <= index < len(chapters) else None
+        turn = engine.get('turn') if isinstance(engine, dict) else None
+        if isinstance(turn, dict):
+            card_body += '\n\n## 本话冲突引擎\n\n' + '\n'.join(
+                f'- {label}：{engine.get(key, "")}' for key, label in [
+                    ('desire', '欲望'), ('obstacle', '阻力'), ('choice', '选择锁死'), ('escalation', '升级')]) + '\n' + '\n'.join(
+                f'- {label}：{turn.get(key, "")}' for key, label in [
+                    ('by', '反转发动者'), ('how', '反转办法'), ('result', '倒转后处境')]) + f'\n- 兑现：{engine.get("payoff", "")}'
         if previous and metadata(previous, 'creation_stage') != 'skeleton':
             # Preserve full superseded card details in history instead of silently losing authored notes.
             card_body += '\n\n## 历史追溯\n\n上一版章节记录与脚本已随本次决策保存在版本历史中，原有决策证据保留。'

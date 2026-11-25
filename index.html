@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="assets/brand/comicperfect-logo.png" />
     <title>ComicPerfect · 创作工作台</title>
     <link rel="stylesheet" href="frontend/css/style.css?v=9f5c7d6b3c" />
-    <link rel="stylesheet" href="frontend/css/studio.css?v=20261016" />
+    <link rel="stylesheet" href="frontend/css/studio.css?v=20261124" />
   </head>
   <body>
     <a class="skip-link" href="#content">跳转到内容</a>
@@ -35,14 +35,12 @@
           <a href="#library" data-nav="library" aria-label="漫画作品"
             ><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 13h16M12 3v10"/></svg></span>漫画作品</a
           >
-          <a href="#principles" data-nav="principles" aria-label="创作原则"
-            ><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 4h14v16H5Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>创作原则</a
-          >
         </nav>
         <nav id="sidebar-series" class="sidebar-series" aria-label="最近系列"></nav>
         <div class="sidebar-bottom">
+          <a class="settings-link" href="#principles" data-nav="principles">创作原则</a>
           <a class="settings-link" href="#settings"
-            >创作设置 <span aria-hidden="true">↗</span></a
+            >创作设置</a
           >
           <a class="profile workspace-switch" href="#workspace" data-nav="workspace">
             <span class="avatar" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></svg></span>
@@ -64,39 +62,23 @@
     </div>
     <dialog id="notes-dialog" aria-labelledby="notes-title">
       <div class="dialog-heading">
-        <h2 id="notes-title">从想法到漫画，随时可以调整</h2>
+        <h2 id="notes-title">从想法到漫画</h2>
         <button class="quiet-button" id="close-notes" aria-label="关闭使用说明">
           关闭 ×
         </button>
       </div>
-      <p>从「我的系列」设计下一话，或从工作台新建单篇。先确认剧情，再调整分镜，最后生成漫画。</p>
+      <p>四步：选参考片段 → 设计并调整剧情 → 确认分镜 → 生成漫画。每一步都可以跳过 AI，直接手改。</p>
       <div class="note-block">
-        <h3>想改哪里，就在那里告诉创作助手</h3>
-        <p>顶部的「创作助手」随时可用。剧情、每页分镜、封面、人物资料与创作原则也有直接入口。选择「先讨论」可以来回推敲；选择「提出具体修改」，审阅修改前后再采用。草稿修改可以撤销。</p>
+        <h3>这一话参考哪段？</h3>
+        <p>系列设定过参考作品后，「设计剧情」里能直接看到系列脉络里的亮点剧情：按顺序用、自己挑，或让 AI 自动选段。想找更多片段或调整顺序，去系列的「参考与脉络」。</p>
       </div>
       <div class="note-block">
-        <h3>只改本话，还是以后都沿用？</h3>
-        <p>修改剧情与分镜只影响本话草稿。修改系列资料会影响该系列后续创作；修改全局创作原则会影响所有系列。助手会显示当前对象和影响范围，可以随时切换。</p>
+        <h3>剧情按起承转合设计</h3>
+        <p>AI 先写四拍和「谁让局面倒转」，再对照创作原则逐条审稿。哪里不满意，写一句话让它重写，或和创作助手来回讨论。</p>
       </div>
       <div class="note-block">
-        <h3>两条创作路径，一个工作空间</h3>
-        <p>
-          系列：浏览原则与系列设定 → 设计连续剧情 → 人工修改章节 →
-          生成分镜与漫画。<br />单篇：输入想法 → 生成分镜 → 人工调整 →
-          生成漫画。
-        </p>
-      </div>
-      <div class="note-block">
-        <h3>少确认，但不模糊创作边界</h3>
-        <p>
-          编辑自动保留为草稿，不弹保存确认。点击“保存本话到系列”后，检查剧情连续性并直接收录最终分镜，更新后续续写使用的创作记忆。同时生成或更新复盘，并分析人工修改是否需要影响后续创作要求。一次局部修改不会直接变成所有系列的通用原则。
-        </p>
-      </div>
-      <div class="note-block">
-        <h3>作品与故事各有自己的版本</h3>
-        <p>
-          已生成漫画留在历史版本中。修改剧情只把当前作品标记为“待重新生成”，不覆盖旧漫画；模型参数、导出与局部重绘放在需要时展开的位置。
-        </p>
+        <h3>草稿、正式剧情与版本</h3>
+        <p>编辑自动存为草稿。点「保存本话到系列」才会成为正式剧情，供下一话续写使用。改剧情不会覆盖已生成的漫画，旧版本都保留。</p>
       </div>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -109,10 +91,10 @@
     <script src="frontend/js/api.js"></script>
     <script src="frontend/js/storyboardImageReconciler.js"></script>
     <script src="frontend/js/consoleStore.js"></script>
-    <script src="frontend/js/consoleViews.js?v=d7b100ae91"></script>
+    <script src="frontend/js/consoleViews.js?v=20261124"></script>
     <script src="frontend/js/drawingPlayback.js"></script>
     <script src="frontend/js/creativeAssistant.js"></script>
     <script src="frontend/js/workspaceUI.js"></script>
-    <script src="frontend/js/app.js?v=a23bc80d10"></script>
+    <script src="frontend/js/app.js?v=20261124"></script>
   </body>
 </html>

@@ -62,9 +62,10 @@ class SceneTest(unittest.TestCase):
         bad = copy.deepcopy(good)
         bad['chapters'][0]['inspiration']['sourceStatus'] = '机制启发'
         bad['chapters'][0]['inspiration'].pop('sourceScene')
-        with patch.object(Console,'ask',side_effect=[bad,good]) as model:
+        review=fixtures.reviewed(good['ruleApplications'])
+        with patch.object(Console,'ask',side_effect=[bad,good,review]) as model:
             result = Console.plan({'series_id':'test'})
-        self.assertEqual(model.call_count,2)
+        self.assertEqual(model.call_count,3)
         self.assertIn('sourceScene',result['chapters'][0]['inspiration'])
         repair = json.loads(model.call_args_list[1].args[2])['repair']
         self.assertIn('不要让用户补全',repair['instruction'])
@@ -75,7 +76,7 @@ class SceneTest(unittest.TestCase):
         chosen=self.scene()
         result=fixtures.ConsoleTest.reference_plan(self)
         result['ruleApplications']=result['ruleApplications'][:1]
-        result['chapters'][0]['inspiration']={'work':'参考作品','mechanism':'具体升级','adaptation':'本话人物承担新的任务'}
+        result['chapters'][0]['inspiration']={'work':'参考作品','mechanism':'具体升级','adaptation':'本话人物承担新的任务','beatMap':copy.deepcopy(fixtures.BEAT_MAP)}
         with patch.object(Scenes,'search',return_value={'candidates':[chosen]}) as search, patch.object(Console,'ask',return_value=result) as model:
             plan=Console.plan({'series_id':'draft-new','idea':'独立校园小事','series_reference':{'work':'参考作品','mode':'plot','brief':''}})
         search.assert_called_once()
@@ -119,14 +120,84 @@ class SceneTest(unittest.TestCase):
         Reference.save('test',{**config,'revision':initial['revision']})
         chosen = config['storyline'][0]
         result = fixtures.ConsoleTest.reference_plan(self)
-        result['chapters'][0]['inspiration'] = {**chosen,'adaptation':'本话自己的任务、选择和结果','referenceId':chosen['id']}
+        result['chapters'][0]['inspiration'] = {**chosen,'adaptation':'本话自己的任务、选择和结果','referenceId':chosen['id'],'beatMap':copy.deepcopy(fixtures.BEAT_MAP)}
         with patch.object(Console,'ask',return_value=result) as model:
             plan = Console.plan({'series_id':'test'})
         self.assertEqual(json.loads(model.call_args.args[2])['selected_reference_scenes'][0]['id'],chosen['id'])
         self.assertEqual(plan['chapters'][0]['inspiration']['sourceScene'],chosen['sourceScene'])
+        # Dropping the source reversal from the mapping is rejected even when every field is present.
+        weak=copy.deepcopy(result); weak['chapters'][0]['inspiration']['beatMap']=[{'source':'原作选择','ours':'承：主角继续装病','kept':'保留','note':''}]*3
+        with patch.object(Console,'ask',return_value=weak):
+            with self.assertRaises(ComicBrainValidationError): Console.plan({'series_id':'test'})
         result['chapters'][0]['inspiration']['referenceId']='incorrect'
         with patch.object(Console,'ask',return_value=result):
             with self.assertRaises(ComicBrainValidationError): Console.plan({'series_id':'test'})
+
+    def storyline(self):
+        initial = Reference.get('test')
+        config = self.config()
+        first, second = config['storyline']
+        first = Scenes.clean_scene({**first, 'title': '装脑震荡，醒来没人认识', 'reference': '第65集，白展堂撞墙后借脑震荡偷懒，众人将他迷晕，再集体装作不认识他。'}, '参考作品')
+        second = Scenes.clean_scene({**second, 'title': '一道题问出了意外人选', 'reference': '第75集，小郭让大嘴在无双和蕙兰之间作答，他脱口选无双，无双的答案又是大嘴。'}, '参考作品')
+        config['storyline'] = [first, second]
+        Reference.save('test', {**config, 'revision': initial['revision']})
+        return first, second
+
+    def adapted(self, scene, title='新故事'):
+        result = fixtures.reviewed([{'documentId': '01-故事', 'status': '采用', 'reason': '主角主动选择'},
+                                    {'documentId': '05-系列偏好', 'status': '采用', 'reason': '选原作片段再改写'}])
+        result['chapters'] = [fixtures.planned(title, inspiration={**scene, 'adaptation': '本话自己的任务、选择和结果', 'beatMap': copy.deepcopy(fixtures.BEAT_MAP)})]
+        return result
+
+    def test_creator_picks_a_planned_scene_for_this_chapter(self):
+        first, second = self.storyline()
+        with patch.object(Console, 'ask', return_value=self.adapted(second)) as model:
+            plan = Console.plan({'series_id': 'test', 'reference_scene_mode': 'chosen', 'reference_scene_ids': [second['id']], 'inspiration_reference': '让清妍先闯祸'})
+        payload = json.loads(model.call_args_list[0].args[2])
+        self.assertEqual([scene['id'] for scene in payload['selected_reference_scenes']], [second['id']])
+        self.assertEqual(payload['reference_scene_mode'], 'chosen')
+        self.assertEqual(payload['required_inspirations'][0]['works'], ['参考作品'])
+        self.assertEqual(payload['inspiration_reference'], '让清妍先闯祸')
+        self.assertEqual(plan['chapters'][0]['inspiration']['title'], '一道题问出了意外人选')
+        # A plan wider than the pick continues along the unused storyline.
+        wider = self.adapted(second); wider['chapters'].append(fixtures.planned('第二话', inspiration={**first, 'adaptation': '承接', 'beatMap': copy.deepcopy(fixtures.BEAT_MAP)}))
+        wider['reviews'].append({'index': 1, 'verdict': 'pass', 'issues': []})
+        with patch.object(Console, 'ask', return_value=wider) as model:
+            Console.plan({'series_id': 'test', 'chapter_count': 2, 'reference_scene_ids': [second['id']]})
+        self.assertEqual([scene['id'] for scene in json.loads(model.call_args_list[0].args[2])['selected_reference_scenes']], [second['id'], first['id']])
+        # Unknown or repeated picks never reach the model.
+        for ids in [[self.scene('丙')['id']], [second['id'], second['id']]]:
+            with patch.object(Console, 'ask') as model:
+                with self.assertRaises(ComicBrainValidationError): Console.plan({'series_id': 'test', 'reference_scene_ids': ids})
+            model.assert_not_called()
+
+    def test_automatic_mode_skips_the_planned_storyline(self):
+        self.storyline()
+        with patch.object(Console, 'ask', return_value=self.adapted(self.scene('新找到'))) as model:
+            Console.plan({'series_id': 'test', 'reference_scene_mode': 'auto'})
+        self.assertEqual(json.loads(model.call_args_list[0].args[2])['selected_reference_scenes'], [])
+        self.assertEqual(json.loads(model.call_args_list[0].args[2])['reference_scene_mode'], 'auto')
+        with patch.object(Console, 'ask', return_value=self.adapted(self.scene('甲'))) as model:
+            Console.plan({'series_id': 'test'})
+        self.assertEqual(len(json.loads(model.call_args_list[0].args[2])['selected_reference_scenes']), 1)
+
+    def test_free_text_naming_one_planned_scene_selects_it(self):
+        first, second = self.storyline()
+        self.assertEqual(Scenes.match_text('参考装脑震荡，醒来没人认识这个片段', [first, second])['id'], first['id'])
+        for vague in ['参考一个装病偷懒的片段', '随便', '']:
+            self.assertIsNone(Scenes.match_text(vague, [first, second]), vague)
+        # Near-identical scenes are ambiguous, so the queue keeps its order.
+        self.assertIsNone(Scenes.match_text('用于结构测试的原作冲突', [self.scene('甲'), self.scene('乙')]))
+        with patch.object(Console, 'ask', return_value=self.adapted(first)) as model:
+            plan = Console.plan({'series_id': 'test', 'inspiration_reference': '参考装脑震荡，醒来没人认识这个片段'})
+        self.assertEqual([scene['id'] for scene in json.loads(model.call_args_list[0].args[2])['selected_reference_scenes']], [first['id']])
+        self.assertEqual(plan['chapters'][0]['inspiration']['referenceId'], first['id'])
+        # Naming another work still overrides the series default for this plan only.
+        other = self.adapted(self.scene('别的作品片段'))
+        other['chapters'][0]['inspiration']['work'] = '别的作品'
+        with patch.object(Console, 'ask', return_value=other) as model:
+            Console.plan({'series_id': 'test', 'inspiration_reference': '参考《别的作品》'})
+        self.assertEqual(json.loads(model.call_args_list[0].args[2])['required_inspirations'][0]['works'], ['别的作品'])
 
     def test_search_uses_public_work_and_keywords_and_only_cites_returned_links(self):
         source = {'id':'S1','title':'参考作品剧情介绍','url':'https://example.com/episode','excerpt':'公开介绍'}

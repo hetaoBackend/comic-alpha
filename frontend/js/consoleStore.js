@@ -123,6 +123,8 @@ class ConsoleStore {
       idea: "",
       inspirationReference: "",
       seriesReference: { work: "", mode: "plot", brief: "" },
+      referenceMode: "queue",
+      referenceSceneIds: [],
       step: 0,
       pageCount: 3,
       chapterCount: 1,

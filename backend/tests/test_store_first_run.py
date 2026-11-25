@@ -30,7 +30,10 @@ class StoreFirstRunTest(unittest.TestCase):
         self.env.start(); self.addCleanup(self.env.stop)
 
     def test_first_story_accepts_no_rule_applications_only_when_catalog_empty(self):
-        result = {'title':'原创验收', 'chapters':[{'title':'纸船', 'beats':['发现漏水','主动修补','成功送信']}], 'ruleApplications':[]}
+        engine = {'desire': '把信送到', 'obstacle': '纸船漏水', 'choice': '偷偷用胶带补上不告诉别人', 'escalation': '朋友不再敢把信交给他',
+                  'turn': {'by': '朋友', 'how': '把他的船当成坏船扔掉重折', 'result': '他必须承认船是自己弄坏的'}, 'payoff': '两人一起重折一只船'}
+        result = {'title':'原创验收', 'chapters':[{'title':'纸船', 'beats':['发现漏水','主动修补','朋友按坏船处理','一起重折送信'], 'engine': engine}],
+                  'reviews': [{'index': 0, 'verdict': 'pass', 'issues': []}], 'ruleApplications': []}
         with patch.object(ConsoleService, 'ask', return_value=result):
             self.assertTrue(ConsoleService.plan({'idea':'温和原创纸船故事'})['contextHash'])
             (self.root/'wiki/创作原则/故事.md').write_text('# 因果清晰\n')

@@ -169,7 +169,6 @@ class CreativeAssistant {
     this.error = "";
     this.element.hidden = false;
     document.body.classList.add("assistant-open");
-    this.app.syncInspector?.();
     this.render();
     this.accessibility();
     if (focus) this.element.querySelector("textarea")?.focus({ preventScroll: true });
@@ -178,7 +177,6 @@ class CreativeAssistant {
     this.opened = false;
     this.element.hidden = true;
     document.body.classList.remove("assistant-open");
-    this.app.syncInspector?.();
     this.accessibility();
     if (this.returnFocus?.isConnected) this.returnFocus.focus({ preventScroll: true });
   }
@@ -217,7 +215,7 @@ class CreativeAssistant {
     if (!patch) return "";
     if (patch.idea) return patch.idea;
     if (patch.description) return `${patch.title}\n\n${patch.description}`;
-    if (patch.beats) return [patch.title, patch.summary, ...patch.beats, patch.cover?.title, patch.cover?.description].filter(Boolean).join("\n\n");
+    if (patch.beats) return [patch.title, patch.summary, ...patch.beats, patch.engine?.turn ? `反转：${[patch.engine.turn.by, patch.engine.turn.how].filter(Boolean).join("，")}` : "", patch.cover?.title, patch.cover?.description].filter(Boolean).join("\n\n");
     return (patch.pages || (patch.page ? [patch.page] : [])).map(page => [page.title, ...page.rows.flatMap((row, ri) => row.panels.map((panel, pi) => `第 ${ri + 1} 行第 ${pi + 1} 格：${panel.text}`))].join("\n\n")).join("\n\n");
   }
   beforeText() {

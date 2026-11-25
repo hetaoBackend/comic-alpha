@@ -168,7 +168,11 @@ test("new series reference is retained in draft storage and sent on its first pl
   assert.equal(sent.inspiration_reference, "");
   const views = new r.ctx.window.ConsoleViews({});
   assert.match(views.referenceForm(reloaded.seriesReference), /家有儿女/);
-  assert.match(views.referenceSummary(reloaded), /每话选具体剧情再改编/);
+  // No planned scenes yet: nothing to pick or order, so the chooser offers no modes.
+  const picker = views.scenePicker(reloaded);
+  assert.match(picker, /《家有儿女》/);
+  assert.match(picker, /脉络里还没有片段/);
+  assert.doesNotMatch(picker, /按脉络顺序|data-reference-mode/);
   assert.match(views.referenceForm({work: '<script>', mode: 'tone', brief: 'x'}), /&lt;script&gt;/);
 });
 
@@ -194,11 +198,11 @@ test("reference scene discovery, selection and ordering stay in the series brief
   assert.equal(c.active.seriesReference.storyline[0].id,'second');
   const views=new r.ctx.window.ConsoleViews(c);
   const html=views.referenceScenes(c.active.seriesReference,null);
-  assert.match(html,/已选系列脉络 · 2/);
+  assert.match(html,/系列脉络 · 2 个片段/);
   assert.match(html,/搜索摘要待核实/);
   assert.match(html,/https:\/\/example.com\/story/);
   assert.match(html,/这些是待创作计划/);
-  assert.match(html,/<details><summary>亮点与来源/);
+  assert.match(html,/<details><summary>来源 · /);
   assert.doesNotMatch(html,/<details open/);
   await c.referenceSceneAction('remove-reference-scene',{dataset:{index:'0'}});
   assert.equal(c.active.seriesReference.storyline.length,1);
@@ -803,4 +807,161 @@ test("social generation sends the current chapter title and every authored panel
   assert.equal(payload.title, d.title);
   assert.deepEqual(payload.pages, d.pages);
   assert.equal(d.social.title, "发布标题");
+});
+
+test("opening a draft settles its stage before anything is drawn", () => {
+  const r = runtime(), c = Object.create(r.controller);
+  const planned = { mode: "series", seriesId: "real-series", step: 0 };
+  assert.equal(c.settleStep(planned).step, 1); // no setup page for an established series
+  assert.equal(c.settleStep({ mode: "series", seriesId: "draft-new", step: 0 }).step, 0);
+  assert.equal(c.settleStep({ ...planned, step: 3 }).step, 3);
+  assert.equal(c.settleStep({ ...planned, step: 9 }).step, 4);
+  const imported = { mode: "series", seriesId: "real-series", source: { seriesId: "real-series" }, step: 0 };
+  assert.equal(c.settleStep(imported).step, 1);
+  assert.equal(c.settleStep({ ...imported, step: 3 }).step, 2);
+  assert.equal(c.settleStep({ mode: "single", step: 0 }).step, 0);
+  assert.equal(c.settleStep({ mode: "single", step: 5 }).step, 5);
+});
+
+test("the story step shows 起承转合, the reversal and the source mapping", () => {
+  const r = runtime(),
+    Views = r.ctx.window.ConsoleViews;
+  const app = { series: () => ({ name: "系列" }), output: "comic" };
+  const views = new Views(app);
+  const d = {
+    id: "d1", mode: "series", seriesId: "real-series", title: "一干活就头晕", step: 2, chapterIndex: 0,
+    pages: [], images: {}, ruleApplications: [{ rule: "故事与主题", status: "采用", reason: "第三拍反转" }],
+    qualityReview: [{ chapter: 1, issues: [{ kind: "缺反转", detail: "哪吒自己想通", fix: "让敖丙出手" }], revised: true }],
+    chapters: [{
+      title: "一干活就头晕", summary: "冲突", beats: ["起：想溜去操场", "承：装糊涂", "转：被当成外人", "合：补做值日"],
+      engine: { desire: "想溜去操场", turn: { by: "敖丙", how: "将计就计", result: "被自己的谎话困住" }, payoff: "补做值日" },
+      inspiration: { title: "装脑震荡", reference: "原作片段", mechanism: "原作亮点", adaptation: "改编方式", sourceStatus: "模型记忆待核实",
+        beatMap: [{ source: "原作选择", ours: "转：旁人反将一军", kept: "等价替换", note: "保留反转功能" }] },
+    }],
+  };
+  const html = views.editor(d);
+  for (const name of ["起", "承", "转", "合"]) assert.match(html, new RegExp(`<strong>${name}</strong>`));
+  assert.match(html, /反转 · 谁主动出手/);
+  assert.match(html, /<strong>反转<\/strong><div class="engine-row"><dt>谁出手<\/dt><dd>敖丙<\/dd><\/div><div class="engine-row"><dt>怎么倒转<\/dt><dd>将计就计/);
+  assert.match(html, /参考片段 · 装脑震荡/);
+  assert.match(html, /被自己的谎话困住/);
+  assert.match(html, /本话的「转」/);
+  assert.match(html, /旁人反将一军/);
+  assert.match(html, /设计稿已自动补强<\/strong>，处理了<b>缺反转<\/b>。/);
+  assert.match(html, /审稿当时指出的问题/);
+  // A stored "起：" label is not repeated under the 起 heading.
+  assert.doesNotMatch(html, />起：想溜/);
+  const legacy = structuredClone(d);
+  legacy.chapters[0].beats = ["开场：事情开始", "发展：选择", "收束：结果"];
+  delete legacy.chapters[0].engine;
+  delete legacy.qualityReview;
+  const old = views.editor(legacy);
+  assert.match(old, /<strong>开场<\/strong>/);
+  assert.match(old, /<strong>收束<\/strong>/);
+  assert.doesNotMatch(old, /故事骨架/);
+});
+
+test("an established series opens on its story; only a new series starts with setup", () => {
+  const r = runtime(), store = new r.Store(), c = Object.create(r.controller);
+  c.store = store;
+  c.navigate = () => {};
+  c.create("series", "real-series");
+  const established = c.active;
+  assert.equal(established.step, 1);
+  c.create("series");
+  const fresh = c.active;
+  assert.equal(fresh.step, 0);
+  const scene = (id, title) => ({ id, title, reference: "原作片段" + id, mechanism: "亮点" });
+  const settings = { work: "武林外传", mode: "plot", usedReferenceIds: ["used"], skippedReferenceIds: [], storyline: [scene("first", "装脑震荡"), scene("used", "已采用片段"), scene("second", "讨二钱")] };
+  const app = { series: (id) => (id === "real-series" ? { name: "真实系列", referenceSettings: settings } : undefined), output: "comic" };
+  const views = new r.ctx.window.ConsoleViews(app);
+  const html = views.editor({ ...established, chapterCount: 1 });
+  assert.deepEqual([...html.matchAll(/data-step="(\d)"/g)].map((m) => m[1]), ["1", "2", "3", "4"]);
+  assert.doesNotMatch(html, /editor-aside|创作工具|了解系列/);
+  assert.match(html, /规划话数/);
+  // Deleting stays reachable, but only behind the ⋯ menu.
+  assert.equal((html.match(/data-action="delete-draft"/g) || []).length, 1);
+  assert.match(html, /class="more-menu"/);
+  // The queue shows the next unused scene and skips adopted ones.
+  const queue = views.scenePicker({ ...established, chapterCount: 2 }, app.series("real-series"));
+  assert.match(queue, /1\. 装震荡|1\. 装脑震荡/);
+  assert.doesNotMatch(queue, /已采用片段/);
+  assert.match(queue, /按脉络顺序/);
+  // Tone mode adapts no scene, whatever the storyline holds.
+  const tone = views.scenePicker({ ...established }, { referenceSettings: { ...settings, mode: "tone" } });
+  assert.match(tone, /只参考《武林外传》的基调/);
+  assert.match(tone, /去「参考与脉络」调整/);
+  assert.doesNotMatch(tone, /data-reference-mode|data-reference-scene/);
+  const picked = views.scenePicker({ ...established, referenceMode: "chosen", referenceSceneIds: ["second"] }, app.series("real-series"));
+  assert.match(picked, /aria-pressed="true"[^>]*><span class="scene-order">1<\/span>/);
+  assert.match(picked, /disabled=""[^>]*>|disabled/);
+  const setup = views.editor({ ...fresh, chapterCount: 1 });
+  assert.deepEqual([...setup.matchAll(/data-step="(\d)"/g)].map((m) => m[1]), ["0", "1", "2", "3", "4"]);
+  assert.match(setup, /建立系列的起点/);
+});
+
+test("the picked scene is sent with a new plan and a revision keeps its scene", async () => {
+  const r = runtime(), c = Object.create(r.controller), store = new r.Store();
+  const d = store.create("series", "real-series", "draft-pick");
+  const scene = (id) => ({ id, title: "片段" + id, reference: "原作", mechanism: "亮点" });
+  c.series = () => ({ referenceSettings: { work: "武林外传", storyline: [scene("a"), scene("b")] } });
+  c.store = { flush: async () => {} };
+  c.render = () => {};
+  c.changed = () => {};
+  c.notify = () => {};
+  c.textConfig = () => ({});
+  const sent = [];
+  r.API.request = async (path, method, body) => {
+    sent.push(body);
+    return { plan: { chapters: [{ title: "下一话", beats: ["起", "承", "转", "合"], engine: { turn: {} } }], ruleApplications: [], qualityReview: [] } };
+  };
+  await c.plan(d);
+  assert.equal(sent[0].reference_scene_mode, "queue");
+  assert.equal(sent[0].reference_scene_ids, undefined);
+  d.referenceMode = "chosen";
+  d.referenceSceneIds = ["b", "removed-since"];
+  await c.plan(d);
+  assert.equal(sent[1].reference_scene_mode, "chosen");
+  assert.deepEqual(sent[1].reference_scene_ids, ["b"]);
+  await c.plan(d, true);
+  assert.equal(sent[2].reference_scene_ids, undefined);
+  assert.equal(d.qualityReview.length, 0);
+  // Clicking keeps click order, a second click deselects, and the chapter count caps picks.
+  c.active = d;
+  d.referenceSceneIds = [];
+  d.chapterCount = 1;
+  const click = (id) => c.click({ target: { closest: (selector) => selector === "a" ? null : { dataset: { referenceScene: id } } } });
+  await click("a");
+  assert.deepEqual(d.referenceSceneIds, ["a"]);
+  await click("a");
+  assert.deepEqual(d.referenceSceneIds, []);
+  await click("a");
+  assert.deepEqual(d.referenceSceneIds, ["a"]);
+  d.chapterCount = 2;
+  await click("b");
+  assert.deepEqual(d.referenceSceneIds, ["a", "b"]);
+  // A scene removed from the storyline since it was picked is not sent.
+  d.referenceSceneIds = ["a", "gone"];
+  await c.plan(d);
+  assert.deepEqual(sent.at(-1).reference_scene_ids, ["a"]);
+});
+
+test("overview pages keep destructive actions away from the main path", () => {
+  const r = runtime(),
+    Views = r.ctx.window.ConsoleViews;
+  const series = { id: "real-series", name: "一个系列", summary: "故事方向", chapters: [], projects: [], documents: [] };
+  const make = (tab) => new Views({ tab, visibleDrafts: () => [] }).seriesDetail(series);
+  const chapters = make("chapters");
+  assert.equal((chapters.match(/#editor\/real-series/g) || []).length, 1);
+  assert.doesNotMatch(chapters, /delete-series|创作工具|data-assistant="context"/);
+  assert.match(make("history"), /data-action="delete-series"/);
+  assert.match(make("reference"), /系列长期参考/);
+  assert.match(make("context"), /系列设定尚未建立/);
+  const draft = { id: "d", mode: "single", title: "作品", pages: [page], images: {}, updatedAt: "2026-01-01T00:00:00Z" };
+  const app = { visibleDrafts: () => [draft], seriesList: [], series: () => undefined, works: () => [], draftCover: () => "", seriesCover: () => "" };
+  const home = new Views(app).home();
+  assert.match(home, /继续创作/);
+  assert.doesNotMatch(home, /永久删除/);
+  const list = new Views({ ...app, search: "" }).seriesList();
+  assert.doesNotMatch(list, /prototype-note|principle-banner/);
 });

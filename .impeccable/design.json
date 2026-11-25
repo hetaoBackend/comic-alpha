@@ -249,7 +249,7 @@
     {
       "name": "Generation Settings",
       "kind": "custom",
-      "description": "Parameters remain available in the central disclosure when side tools move.",
+      "description": "Page or chapter count and style sit in a compact row inside the working paper; language, rows per page, pages per chapter and the reference image stay in its 更多设置 disclosure.",
       "html": "<details class=\"ds-settings\"><summary>生成参数 · 页数、画风与更多设置</summary><section><h3>生成参数</h3><p>漫画页数 · 3 页　画风 · 跟随系列视觉</p></section></details>",
       "css": ".ds-settings{font-family:var(--font-sans,\"UX Chinese\",Arial,\"PingFang SC\",\"Microsoft YaHei\",sans-serif);font-size:12px;color:var(--ink,#24332f)}.ds-settings summary{cursor:pointer;padding:12px 0}.ds-settings summary:hover{color:var(--brand,#28665b)}.ds-settings summary:focus-visible{outline:2px solid var(--brand,#28665b);outline-offset:4px}.ds-settings section{margin:16px 0;padding:16px;background:#f4f7f4;border-radius:0}.ds-settings h3{font-size:13px;margin:0 0 12px}.ds-settings p{font-size:13px;margin:0;line-height:1.8}"
     }
@@ -262,7 +262,7 @@
       "Cool neutral studio surfaces, white paper and restrained teal actions.",
       "Compact controls, clear artifact stages and quiet status labels.",
       "Real workspace artwork and preserved versions supply the imagery.",
-      "Parameters remain reachable when the assistant occupies the tool area."
+      "Parameters sit inline beside the work; one primary action per screen."
     ],
     "rules": [
       {
@@ -271,8 +271,8 @@
         "section": "layout"
       },
       {
-        "name": "The Reachable Parameters Rule",
-        "body": "Moving tools must preserve access: page count and style move into the central disclosure when the assistant opens or the viewport is mobile.",
+        "name": "The Inline Parameters Rule",
+        "body": "Page count or chapter count and style live in a compact row inside the working paper at every width; opening the assistant or changing the viewport moves nothing.",
         "section": "components"
       },
       {
@@ -284,7 +284,7 @@
     "dos": [
       "Do keep the authored canvas central and reserve side areas for navigation and contextual tools.",
       "Do preserve settings and workspace access in the full sidebar, compact rail and mobile header.",
-      "Do relocate page count and style into the central generation-settings disclosure when the assistant opens or the viewport is mobile.",
+      "Do keep generation parameters inline in the working paper and show the reversal of a story before its beats.",
       "Do use real workspace artwork, readable empty states and preserved image versions.",
       "Do distinguish story editing, storyboard confirmation and image generation with explicit next actions.",
       "Do retain visible focus, readable wrapping, status feedback and reduced-motion support."
@@ -292,7 +292,7 @@
     "donts": [
       "Don’t restore the superseded HTML reference as visual authority.",
       "Don’t enlarge routine controls into promotional cards or add decorative artwork to the studio chrome.",
-      "Don’t hide generation parameters merely because the right inspector is hidden.",
+      "Don’t reintroduce a side inspector, duplicate the primary action on one screen, or place a destructive button beside a primary one.",
       "Don’t duplicate the workspace identity into a second sidebar card.",
       "Don’t hide historical images when a story changes or present prototype examples as real work."
     ]

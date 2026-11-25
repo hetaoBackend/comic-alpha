@@ -52,7 +52,12 @@ if (require.main === module) {
   const executable = process.platform === 'darwin' ? prepareMacRuntime(electron, root) : electron;
   if (process.argv.includes('--prepare-only')) console.log(executable);
   else {
-    const child = spawn(executable, [root, ...process.argv.slice(2)], { cwd: root, stdio: 'inherit' });
+    // Electron-hosted terminals (IDE integrated shells) export
+    // ELECTRON_RUN_AS_NODE=1, which makes the app binary run as plain Node and
+    // leaves `require('electron').app` undefined. Always launch as an app.
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const child = spawn(executable, [root, ...process.argv.slice(2)], { cwd: root, stdio: 'inherit', env });
     child.once('error', error => { console.error(error.message); process.exitCode = 1; });
     child.once('exit', code => { process.exitCode = code ?? 1; });
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));

@@ -183,6 +183,14 @@ class UIController {
       }
     });
   }
+  settleStep(d) {
+    // An established series or an imported chapter has nothing to set up first, and
+    // a stage saved beyond the last one reopens on the finished comic.
+    if (d.mode !== "series") return d;
+    if (d.step > outputStep(d)) d.step = outputStep(d);
+    if (d.step === 0 && (d.source || !isNewSeries(d))) d.step = 1;
+    return d;
+  }
   navigate(hash) {
     if (location.hash === hash) this.render();
     else location.hash = hash;
@@ -193,23 +201,10 @@ class UIController {
     if (mode === "series" && !sid) {
       d.seriesId = "draft-" + crypto.randomUUID();
       d.seriesName = "";
-    }
+    } else if (mode === "series") d.step = 1;
     this.active = d;
     this.store.save(d);
     this.navigate("#draft/" + d.id);
-  }
-  syncInspector() {
-    const options = this.main.querySelector(".inspector-options");
-    const slot = this.main.querySelector("[data-inline-generation]");
-    const inspector = this.main.querySelector(".editor-aside");
-    if (!options || !slot || !inspector) return;
-    const inline = this.assistant?.opened || window.matchMedia("(max-width: 760px)").matches;
-    if (inline && options.parentElement !== slot) slot.append(options);
-    else if (!inline && options.parentElement !== inspector)
-      inspector.querySelector(".inspector-heading").after(options);
-    options.classList.toggle("inline-generation-options", !!inline);
-    slot.closest("details").querySelector("summary").textContent = inline
-      ? "生成参数 · 页数、画风与更多设置" : "更多设置 · 语言、布局与参考图";
   }
   render() {
     const focused = document.activeElement;
@@ -228,6 +223,8 @@ class UIController {
         "data-chapter-index",
         "data-action",
         "data-page",
+        "data-reference-mode",
+        "data-reference-scene",
       ];
       const parts = attributes
         .filter((name) => focused.hasAttribute(name))
@@ -324,7 +321,7 @@ class UIController {
     document.getElementById("breadcrumb").innerHTML = `<a href="#workspace">${E(workspaceName)}</a><span>/</span><strong>${E(labels[route] || "创作工作台")}</strong>`;
     const seriesNav = document.getElementById("sidebar-series");
     const currentSeries = ["draft", "work"].includes(route) ? this.store.drafts[id]?.seriesId : route === "series" ? id : null;
-    if (seriesNav) seriesNav.innerHTML = `<p>系列</p>${this.seriesList.filter(s => !["deprecated", "archived"].includes(s.status)).slice(0, 5).map(s => `<a href="#series/${encodeURIComponent(s.id)}" ${s.id === currentSeries ? 'aria-current="page"' : ""}><span class="series-dot" aria-hidden="true"></span><span>${E(s.name)}</span></a>`).join("")}<a class="sidebar-new-series" href="#new-series">+ 建立新系列</a>`;
+    if (seriesNav) seriesNav.innerHTML = `<p>系列</p>${this.seriesList.filter(s => !["deprecated", "archived"].includes(s.status)).slice(0, 5).map(s => `<a href="#series/${encodeURIComponent(s.id)}" ${s.id === currentSeries ? 'aria-current="page"' : ""}><span class="series-dot" aria-hidden="true"></span><span>${E(s.name)}</span></a>`).join("")}`;
     let html = "";
     if (route === "home") html = this.views.home();
     else if (route === "series")
@@ -343,6 +340,7 @@ class UIController {
     else if (route === "workspace") html = this.workspaceUI?.view() || empty("正在读取创作空间…", "稍等片刻");
     else if (route === "draft" || route === "work") {
       this.active = this.store.drafts[id];
+      if (this.active) this.settleStep(this.active);
       if (!this.active)
         html = empty(
           "没有找到这份作品",
@@ -359,7 +357,7 @@ class UIController {
           this.switchChapter(Number(chapterIndex));
         html =
           route === "work"
-            ? `${heading(this.active.title || "漫画作品", this.series(this.active.seriesId)?.name || "单篇漫画", link(this.active.mode === "series" ? "返回系列" : "返回作品库", this.active.mode === "series" ? "#series/" + this.active.seriesId : "#library"))}<div class="editor-layout">${this.views.output(this.active, true)}${this.views.aside(this.active)}</div>`
+            ? `${heading(this.active.title || "漫画作品", this.series(this.active.seriesId)?.name || "单篇漫画", link(this.active.mode === "series" ? "返回系列" : "返回作品库", this.active.mode === "series" ? "#series/" + this.active.seriesId : "#library"))}${this.views.output(this.active, true)}`
             : this.views.editor(this.active);
       }
     } else html = this.views.home();
@@ -407,11 +405,17 @@ class UIController {
       this.main.querySelector(this.restoreFocusSelector);
     if (restore && !restore.disabled) restore.focus({ preventScroll: true });
     this.commands?.reportState();
-    this.syncInspector();
     this.assistant?.syncContext();
   }
   bind() {
-    window.addEventListener("resize", () => this.syncInspector());
+    // A disclosure menu closes when the creator moves on somewhere else.
+    document.addEventListener("click", (e) => {
+      document
+        .querySelectorAll(".more-menu[open]")
+        .forEach((menu) => {
+          if (!menu.contains(e.target)) menu.open = false;
+        });
+    });
     window.addEventListener("storage", (e) => {
       if (e.key === `${this.store.key}:deletions` && e.newValue) {
         try {
@@ -599,6 +603,8 @@ class UIController {
       d[name] = ["pageCount", "chapterCount", "rows"].includes(name)
         ? Number(el.value)
         : el.value;
+      if (name === "chapterCount" && d.referenceSceneIds?.length > d.chapterCount)
+        d.referenceSceneIds = d.referenceSceneIds.slice(0, d.chapterCount);
       if (name === "title" && d.chapters[d.chapterIndex])
         d.chapters[d.chapterIndex].title = el.value;
       if (name === "summary" && d.chapters[d.chapterIndex])
@@ -786,8 +792,29 @@ class UIController {
         this.render();
       }
     }
-    if (el.dataset.preview !== undefined)
-      this.preview(Number(el.dataset.preview));
+    if (el.dataset.referenceMode) {
+      this.active.referenceMode = el.dataset.referenceMode;
+      this.changed(this.active);
+      this.render();
+      return;
+    }
+    if (el.dataset.referenceScene) {
+      const id = el.dataset.referenceScene;
+      const ids = this.active.referenceSceneIds ||
+        (this.active.referenceSceneIds = []);
+      const at = ids.indexOf(id);
+      if (at >= 0) ids.splice(at, 1);
+      else if (ids.length < (this.active.chapterCount || 1)) ids.push(id);
+      else {
+        this.notify(
+          `最多为 ${this.active.chapterCount} 话各选一个片段，先取消已选的片段。`,
+        );
+        return;
+      }
+      this.changed(this.active);
+      this.render();
+      return;
+    }
     const d = this.active,
       action = el.dataset.action;
     if (!action) return;
@@ -799,7 +826,7 @@ class UIController {
         this.changed(this.active);
         this.render();
       } else if (sid) {
-        this.tab = 'context';
+        this.tab = 'reference';
         this.navigate('#series/' + encodeURIComponent(sid));
       }
       return;
@@ -852,9 +879,11 @@ class UIController {
       return;
     }
     if (action === "back-context") {
-      d.step = 0;
-      this.changed(d);
-      this.render();
+      if (isPlanned(d) && isNewSeries(d)) {
+        d.step = 0;
+        this.changed(d);
+        this.render();
+      } else this.navigate("#series/" + encodeURIComponent(d.seriesId));
       return;
     }
     if (action === "view-output") {
@@ -1121,10 +1150,10 @@ class UIController {
       throw new Error("先填写新系列的方向，就可以让 AI 设计剧情。");
     const c = this.textConfig();
     this.progress = revise
-      ? "正在根据调整方向重新设计…"
+      ? "正在按调整方向重写，并重新检查起承转合…"
       : d.mode === "single"
         ? "正在生成可编辑分镜…"
-        : "正在结合创作原则、系列记忆与经典剧情参考，设计下一话…";
+        : "正在设计这一话的起承转合，再对照创作原则逐条审稿；发现问题会自动重写一次…";
     this.render();
     if (d.mode === "single") {
       await this.store.flush(d.id);
@@ -1143,6 +1172,9 @@ class UIController {
         ...c,
         idea: [d.seriesBrief, d.idea].filter(Boolean).join("\n"),
         inspiration_reference: d.inspirationReference || "",
+        // A revision keeps the scene it was planned from; a new plan takes the pick.
+        reference_scene_mode: d.referenceMode || "queue",
+        reference_scene_ids: revise ? undefined : this.selectedScenes(d),
         series_reference: d.seriesId?.startsWith("draft-") ? d.seriesReference : undefined,
         series_id: d.seriesId,
         chapter_count: revise ? 1 : d.chapterCount,
@@ -1169,6 +1201,7 @@ class UIController {
       }
       d.ruleApplications = result.plan.ruleApplications;
       d.contextHash = result.plan.contextHash;
+      d.qualityReview = result.plan.qualityReview || [];
       this.restoreChapter(d);
       d.step = 2;
     }
@@ -1183,6 +1216,15 @@ class UIController {
     this.snapshotChapter(d);
     this.changed(d);
     await this.store.flush(d.id);
+  }
+  selectedScenes(d) {
+    if (d.referenceMode !== "chosen") return undefined;
+    const config = isNewSeries(d)
+      ? d.seriesReference
+      : this.series(d.seriesId)?.referenceSettings;
+    const known = new Set((config?.storyline || []).map((scene) => scene.id));
+    // Scenes removed from the storyline since they were picked are dropped here.
+    return (d.referenceSceneIds || []).filter((id) => known.has(id));
   }
   async reviseStoryboard(d) {
     this.progress = "正在根据调整方向修改分镜…";
